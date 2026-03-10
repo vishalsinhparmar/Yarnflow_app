@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SHADOWS, SPACING, BORDER_RADIUS } from '@/constants/colors';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface ProductCardProps {
   product: {
@@ -40,7 +40,7 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
         </View>
         <View style={styles.stockBadge}>
           <Text style={styles.stockValue}>
-            {product.currentStock} {product.unit}
+            {product.currentStock ?? 0} {product.unit || ''}
           </Text>
         </View>
       </View>
@@ -50,7 +50,7 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
         <View style={styles.statItem}>
           <Text style={styles.statLabel}>Current Stock</Text>
           <Text style={[styles.statValue, { color: COLORS.success }]}>
-            {product.currentStock} {product.unit}
+            {product.currentStock ?? 0} {product.unit || ''}
           </Text>
           <Text style={styles.statSubtext}>After stock out</Text>
         </View>
@@ -83,12 +83,12 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
             </Text>
           </View>
           <View style={styles.weightChanges}>
-            {product.receivedWeight && product.receivedWeight > 0 && (
+            {product.receivedWeight != null && product.receivedWeight > 0 && (
               <Text style={[styles.weightChange, { color: COLORS.success }]}>
                 +{product.receivedWeight.toFixed(2)}
               </Text>
             )}
-            {product.issuedWeight && product.issuedWeight > 0 && (
+            {product.issuedWeight != null && product.issuedWeight > 0 && (
               <Text style={[styles.weightChange, { color: COLORS.danger }]}>
                 -{product.issuedWeight.toFixed(2)}
               </Text>

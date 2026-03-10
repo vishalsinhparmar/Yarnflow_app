@@ -1,7 +1,10 @@
+import ErrorState from '@/components/ui/ErrorState';
+import { ListSkeleton } from '@/components/ui/SkeletonLoader';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -9,7 +12,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { BORDER_RADIUS, COLORS, SHADOWS, SPACING } from '../../constants/colors';
 import { salesOrderAPI } from '../../services/salesOrderAPI.js';
 
 interface Stats {
@@ -29,6 +31,7 @@ export default function SalesScreen() {
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -37,39 +40,27 @@ export default function SalesScreen() {
   const loadStats = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await salesOrderAPI.getStats();
-      console.log('Sales Screen - Stats response:', response);
       
       if (response?.success) {
         const statsData = response.data;
         const statusBreakdown = statsData.statusBreakdown || [];
         
-        console.log('Sales Screen - Status breakdown:', statusBreakdown);
-        
-        // Count delivered orders (check both lowercase and capitalized)
         const completedCount = statusBreakdown
           .filter((s: any) => s._id === 'delivered' || s._id === 'Delivered')
           .reduce((sum: number, s: any) => sum + s.count, 0);
         
-        // Count draft orders (check both lowercase and capitalized)
         const draftCount = statusBreakdown
           .filter((s: any) => s._id === 'draft' || s._id === 'Draft')
           .reduce((sum: number, s: any) => sum + s.count, 0);
         
-        // Count pending orders (check both lowercase and capitalized)
         const pendingCount = statusBreakdown
           .filter((s: any) => {
             const id = s._id.toLowerCase();
             return ['pending', 'approved', 'partially_dispatched', 'dispatched'].includes(id);
           })
           .reduce((sum: number, s: any) => sum + s.count, 0);
-
-        console.log('Sales Screen - Calculated stats:', {
-          totalOrders: statsData.overview?.totalOrders || 0,
-          completed: completedCount,
-          draft: draftCount,
-          pending: pendingCount
-        });
 
         setStats({
           totalOrders: statsData.overview?.totalOrders || 0,
@@ -78,8 +69,9 @@ export default function SalesScreen() {
           pending: pendingCount,
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading stats:', err);
+      setError(err.message || 'Failed to load sales data');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -91,20 +83,17 @@ export default function SalesScreen() {
     loadStats();
   }, []);
 
-  const handleNavigateToSalesOrders = () => {
-    router.push('/sales-orders');
-  };
-
-  const handleCreateSalesOrder = () => {
-    router.push('/sales-orders/form');
-  };
-
   if (loading) {
+    return <ListSkeleton count={3} />;
+  }
+
+  if (error) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366F1" />
-        <Text style={styles.loadingText}>Loading sales data...</Text>
-      </View>
+      <ErrorState
+        title="Unable to Load Sales Data"
+        message={error}
+        onRetry={loadStats}
+      />
     );
   }
 
@@ -113,7 +102,7 @@ export default function SalesScreen() {
       style={styles.container}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
       }
     >
       {/* Header */}
@@ -126,74 +115,69 @@ export default function SalesScreen() {
       <View style={styles.section}>
         {/* Sales Orders Card */}
         <TouchableOpacity
-          style={[styles.mainCard, styles.salesOrderCard]}
-          onPress={handleNavigateToSalesOrders}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
+          onPress={() => router.push('/sales-orders')}
         >
-          <View style={styles.cardHeader}>
-            <View style={styles.iconContainer}>
-              <Text style={styles.cardEmoji}>📝</Text>
+          <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.mainCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <View style={styles.cardHeader}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="document-text" size={28} color="#FFF" />
+              </View>
+              <View style={styles.cardHeaderRight}>
+                <Text style={styles.mainCardTitle}>Sales Orders</Text>
+                <Text style={styles.mainCardSubtitle}>Customer orders & invoices</Text>
+              </View>
             </View>
-            <View style={styles.cardHeaderRight}>
-              <Text style={styles.mainCardTitle}>Sales Orders</Text>
-              <Text style={styles.mainCardSubtitle}>Customer orders & invoices</Text>
+            
+            <View style={styles.statsRow}>
+              <TouchableOpacity style={styles.statItem} onPress={() => router.push('/sales-orders?filter=all')}>
+                <Text style={styles.mainStatValue}>{stats.totalOrders}</Text>
+                <Text style={styles.mainStatLabel}>Total</Text>
+              </TouchableOpacity>
+              <View style={styles.statDivider} />
+              <TouchableOpacity style={styles.statItem} onPress={() => router.push('/sales-orders?filter=Draft')}>
+                <Text style={[styles.mainStatValue, { color: '#FCD34D' }]}>{stats.draft}</Text>
+                <Text style={styles.mainStatLabel}>Draft</Text>
+              </TouchableOpacity>
+              <View style={styles.statDivider} />
+              <TouchableOpacity style={styles.statItem} onPress={() => router.push('/sales-orders?filter=Delivered')}>
+                <Text style={[styles.mainStatValue, { color: '#34D399' }]}>{stats.completed}</Text>
+                <Text style={styles.mainStatLabel}>Delivered</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-          
-          <View style={styles.statsRow}>
-            <TouchableOpacity 
-              style={styles.statItem}
-              onPress={() => router.push('/sales-orders?filter=all')}
-            >
-              <Text style={styles.statValue}>{stats.totalOrders}</Text>
-              <Text style={styles.statLabel}>Total</Text>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <TouchableOpacity 
-              style={styles.statItem}
-              onPress={() => router.push('/sales-orders?filter=Draft')}
-            >
-              <Text style={[styles.statValue, { color: '#FCD34D' }]}>{stats.draft}</Text>
-              <Text style={styles.statLabel}>Draft</Text>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <TouchableOpacity 
-              style={styles.statItem}
-              onPress={() => router.push('/sales-orders?filter=Delivered')}
-            >
-              <Text style={[styles.statValue, { color: '#34D399' }]}>{stats.completed}</Text>
-              <Text style={styles.statLabel}>Delivered</Text>
-            </TouchableOpacity>
-          </View>
 
-          <View style={styles.cardFooter}>
-            <Text style={styles.viewAllText}>View All Orders →</Text>
-          </View>
+            <View style={styles.cardFooter}>
+              <Text style={styles.viewAllText}>View All Orders</Text>
+              <Ionicons name="arrow-forward" size={16} color="#FFF" />
+            </View>
+          </LinearGradient>
         </TouchableOpacity>
 
         {/* Sales Challan Card */}
         <TouchableOpacity
-          style={[styles.mainCard, styles.challanCard]}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
           onPress={() => router.push('/sales-challan')}
         >
-          <View style={styles.cardHeader}>
-            <View style={[styles.iconContainer, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-              <Text style={styles.cardEmoji}>🚚</Text>
+          <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.mainCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+            <View style={styles.cardHeader}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="car" size={28} color="#FFF" />
+              </View>
+              <View style={styles.cardHeaderRight}>
+                <Text style={styles.mainCardTitle}>Sales Challan</Text>
+                <Text style={styles.mainCardSubtitle}>Delivery tracking & status</Text>
+              </View>
             </View>
-            <View style={styles.cardHeaderRight}>
-              <Text style={styles.mainCardTitle}>Sales Challan</Text>
-              <Text style={styles.mainCardSubtitle}>Delivery tracking & status</Text>
+
+            <Text style={styles.challanDescription}>
+              Track deliveries, dispatch status, and manage shipment documents
+            </Text>
+
+            <View style={styles.cardFooter}>
+              <Text style={styles.viewAllText}>View All Challans</Text>
+              <Ionicons name="arrow-forward" size={16} color="#FFF" />
             </View>
-          </View>
-
-          <Text style={styles.challanDescription}>
-            Track deliveries, dispatch status, and manage shipment documents
-          </Text>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.viewAllText}>View All Challans →</Text>
-          </View>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
@@ -203,15 +187,17 @@ export default function SalesScreen() {
         
         <TouchableOpacity
           style={styles.quickActionCard}
-          onPress={handleCreateSalesOrder}
+          onPress={() => router.push('/sales-orders/form')}
           activeOpacity={0.7}
         >
-          <Text style={styles.quickActionEmoji}>➕</Text>
+          <View style={[styles.quickActionIconWrap, { backgroundColor: '#EEF2FF' }]}>
+            <Ionicons name="add-circle" size={24} color="#3B82F6" />
+          </View>
           <View style={styles.quickActionContent}>
             <Text style={styles.quickActionTitle}>Create New Sales Order</Text>
             <Text style={styles.quickActionSubtitle}>Add customer order with products</Text>
           </View>
-          <Text style={styles.quickActionArrow}>›</Text>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -219,12 +205,14 @@ export default function SalesScreen() {
           onPress={() => router.push('/sales-orders?filter=Draft')}
           activeOpacity={0.7}
         >
-          <Text style={styles.quickActionEmoji}>📝</Text>
+          <View style={[styles.quickActionIconWrap, { backgroundColor: '#FFF7ED' }]}>
+            <Ionicons name="create" size={24} color="#F59E0B" />
+          </View>
           <View style={styles.quickActionContent}>
             <Text style={styles.quickActionTitle}>Draft Orders</Text>
             <Text style={styles.quickActionSubtitle}>{stats.draft} orders need attention</Text>
           </View>
-          <Text style={styles.quickActionArrow}>›</Text>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -232,48 +220,61 @@ export default function SalesScreen() {
           onPress={() => router.push('/sales-orders?filter=Delivered')}
           activeOpacity={0.7}
         >
-          <Text style={styles.quickActionEmoji}>✅</Text>
+          <View style={[styles.quickActionIconWrap, { backgroundColor: '#ECFDF5' }]}>
+            <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+          </View>
           <View style={styles.quickActionContent}>
             <Text style={styles.quickActionTitle}>Delivered Orders</Text>
             <Text style={styles.quickActionSubtitle}>{stats.completed} completed orders</Text>
           </View>
-          <Text style={styles.quickActionArrow}>›</Text>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
         </TouchableOpacity>
       </View>
 
       {/* Overview Stats */}
-      <View style={styles.statsSection}>
+      <View style={styles.overviewSection}>
         <Text style={styles.sectionTitle}>Overview</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>💼</Text>
-            <Text style={styles.statValue}>{stats.totalOrders}</Text>
-            <Text style={styles.statLabel}>Total Orders</Text>
+        <View style={styles.overviewGrid}>
+          <View style={styles.overviewCard}>
+            <View style={[styles.overviewIconWrap, { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name="briefcase" size={22} color="#6366F1" />
+            </View>
+            <Text style={styles.overviewValue}>{stats.totalOrders}</Text>
+            <Text style={styles.overviewLabel}>Total Orders</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>⏳</Text>
-            <Text style={styles.statValue}>{stats.pending}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
+          <View style={styles.overviewCard}>
+            <View style={[styles.overviewIconWrap, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="time" size={22} color="#F59E0B" />
+            </View>
+            <Text style={styles.overviewValue}>{stats.pending}</Text>
+            <Text style={styles.overviewLabel}>Pending</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>✅</Text>
-            <Text style={styles.statValue}>{stats.completed}</Text>
-            <Text style={styles.statLabel}>Delivered</Text>
+          <View style={styles.overviewCard}>
+            <View style={[styles.overviewIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="checkmark-done" size={22} color="#10B981" />
+            </View>
+            <Text style={styles.overviewValue}>{stats.completed}</Text>
+            <Text style={styles.overviewLabel}>Delivered</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>📝</Text>
-            <Text style={styles.statValue}>{stats.draft}</Text>
-            <Text style={styles.statLabel}>Draft</Text>
+          <View style={styles.overviewCard}>
+            <View style={[styles.overviewIconWrap, { backgroundColor: '#DBEAFE' }]}>
+              <Ionicons name="document" size={22} color="#3B82F6" />
+            </View>
+            <Text style={styles.overviewValue}>{stats.draft}</Text>
+            <Text style={styles.overviewLabel}>Draft</Text>
           </View>
         </View>
       </View>
 
       {/* Info Box */}
       <View style={styles.infoBox}>
+        <Ionicons name="bulb" size={18} color="#1E40AF" />
         <Text style={styles.infoText}>
-          💡 Create Sales Orders for customer purchases. Generate Sales Challans to track deliveries and shipments.
+          Create Sales Orders for customer purchases. Generate Sales Challans to track deliveries and shipments.
         </Text>
       </View>
+
+      <View style={{ height: 20 }} />
     </ScrollView>
   );
 }
@@ -281,217 +282,222 @@ export default function SalesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.gray50,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.gray50,
-  },
-  loadingText: {
-    marginTop: SPACING.md,
-    fontSize: 16,
-    color: COLORS.gray600,
+    backgroundColor: '#F9FAFB',
   },
   header: {
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xl * 2,
-    paddingBottom: SPACING.xl,
-    backgroundColor: COLORS.white,
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
+    borderBottomColor: '#E5E7EB',
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.gray900,
-    marginBottom: SPACING.xs,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: COLORS.gray600,
+    color: '#6B7280',
   },
   section: {
-    padding: SPACING.lg,
-    gap: SPACING.lg,
+    padding: 16,
+    gap: 14,
   },
   mainCard: {
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.xl,
-    ...SHADOWS.medium,
-  },
-  salesOrderCard: {
-    backgroundColor: '#3B82F6',
-  },
-  challanCard: {
-    backgroundColor: '#8B5CF6',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    marginBottom: 16,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: SPACING.md,
+    marginRight: 12,
   },
   cardHeaderRight: {
     flex: 1,
   },
   mainCardTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.white,
-    marginBottom: 4,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 2,
   },
   mainCardSubtitle: {
-    fontSize: 14,
-    color: COLORS.white,
-    opacity: 0.9,
+    fontSize: 13,
+    color: '#FFF',
+    opacity: 0.85,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingVertical: SPACING.lg,
-    marginBottom: SPACING.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: 14,
+    marginBottom: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 12,
   },
   statItem: {
     alignItems: 'center',
+    flex: 1,
   },
-  statValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: COLORS.white,
+  mainStatValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFF',
   },
-  statLabel: {
-    fontSize: 12,
-    color: COLORS.white,
+  mainStatLabel: {
+    fontSize: 11,
+    color: '#FFF',
     opacity: 0.8,
-    marginTop: 4,
+    marginTop: 2,
+    fontWeight: '500',
   },
   statDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    height: 36,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: 6,
   },
   viewAllText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: COLORS.white,
+    color: '#FFF',
   },
   challanDescription: {
-    fontSize: 14,
-    color: COLORS.white,
-    opacity: 0.9,
+    fontSize: 13,
+    color: '#FFF',
+    opacity: 0.85,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: SPACING.md,
+    lineHeight: 19,
+    marginBottom: 12,
   },
   quickActionsSection: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.gray900,
-    marginBottom: SPACING.md,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
   },
   quickActionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    padding: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-    marginBottom: SPACING.sm,
-    ...SHADOWS.small,
+    backgroundColor: '#FFF',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  cardEmoji: {
-    fontSize: 32,
-  },
-  quickActionEmoji: {
-    fontSize: 32,
-    marginRight: SPACING.md,
+  quickActionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   quickActionContent: {
     flex: 1,
   },
   quickActionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: COLORS.gray900,
+    color: '#111827',
     marginBottom: 2,
   },
   quickActionSubtitle: {
     fontSize: 13,
-    color: COLORS.gray600,
+    color: '#6B7280',
   },
-  quickActionArrow: {
-    fontSize: 24,
-    color: COLORS.gray400,
+  overviewSection: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
-  statsSection: {
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  statsGrid: {
+  overviewGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
-  statCard: {
+  overviewCard: {
     flex: 1,
     minWidth: 150,
-    backgroundColor: COLORS.white,
+    backgroundColor: '#FFF',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.gray200,
-    ...SHADOWS.small,
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  statIcon: {
-    fontSize: 32,
+  overviewIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.gray900,
-    marginBottom: 4,
+  overviewValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
   },
-  statLabel: {
+  overviewLabel: {
     fontSize: 12,
-    color: COLORS.gray600,
+    color: '#6B7280',
     textAlign: 'center',
+    fontWeight: '500',
   },
   infoBox: {
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.xl,
-    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 14,
     borderRadius: 12,
     backgroundColor: '#EFF6FF',
     borderLeftWidth: 4,
     borderLeftColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
   infoText: {
-    fontSize: 14,
-    lineHeight: 20,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
     color: '#1E40AF',
   },
 });

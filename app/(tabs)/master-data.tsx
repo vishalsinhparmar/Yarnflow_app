@@ -1,9 +1,9 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { COLORS } from '@/constants/colors';
+import { DashboardSkeleton } from '@/components/ui/SkeletonLoader';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { getMasterDataStats } from '../../services/index.js';
 
 export default function MasterDataScreen() {
@@ -43,13 +43,14 @@ export default function MasterDataScreen() {
     router.push(`/master-data/${screenName.toLowerCase()}/`);
   };
 
-  const dashboardItems = [
+  const dashboardItems: { title: string; count: number; subtitle: string; color: string; bgColor: string; icon: keyof typeof Ionicons.glyphMap; screen: string }[] = [
     {
       title: 'Customers',
       count: stats?.customers?.total || 0,
       subtitle: `${stats?.customers?.active || 0} active`,
       color: '#3B82F6',
-      icon: '👥',
+      bgColor: '#DBEAFE',
+      icon: 'people',
       screen: 'customers',
     },
     {
@@ -57,7 +58,8 @@ export default function MasterDataScreen() {
       count: stats?.suppliers?.total || 0,
       subtitle: 'Total suppliers',
       color: '#8B5CF6',
-      icon: '🏭',
+      bgColor: '#EDE9FE',
+      icon: 'business',
       screen: 'suppliers',
     },
     {
@@ -65,7 +67,8 @@ export default function MasterDataScreen() {
       count: stats?.products?.total || 0,
       subtitle: `${stats?.products?.lowStock || 0} low stock`,
       color: '#10B981',
-      icon: '🧶',
+      bgColor: '#D1FAE5',
+      icon: 'cube',
       screen: 'products',
     },
     {
@@ -73,161 +76,221 @@ export default function MasterDataScreen() {
       count: stats?.categories?.total || 0,
       subtitle: 'Product categories',
       color: '#F59E0B',
-      icon: '📂',
+      bgColor: '#FEF3C7',
+      icon: 'folder-open',
       screen: 'categories',
     },
   ];
 
   if (loading && !stats) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Master Data...</Text>
-      </View>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
-      <ThemedView style={styles.header}>
-        <ThemedText type="title">Master Data Management</ThemedText>
-        <ThemedText style={styles.subtitle}>
-          Manage customers, suppliers, products, and categories
-        </ThemedText>
-      </ThemedView>
-
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      <View style={styles.grid}>
-        {dashboardItems.map((item, index) => (
-          <TouchableOpacity
-            key={index}
-            style={[styles.card, { borderLeftColor: item.color }]}
-            onPress={() => navigateToScreen(item.screen)}
-          >
-            <View style={styles.cardHeader}>
-              <Text style={styles.icon}>{item.icon}</Text>
-              <Text style={styles.count}>{item.count}</Text>
+    <View style={styles.container}>
+      {/* Gradient Header */}
+      <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.headerGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <View style={styles.headerContent}>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="folder-open" size={20} color="#FFF" />
             </View>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <View>
+              <Text style={styles.headerTitle}>Master Data</Text>
+              <Text style={styles.headerSubtitle}>Manage your business data</Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
 
-      <ThemedView style={styles.infoBox}>
-        <ThemedText style={styles.infoText}>
-          💡 Master Data is the foundation of YarnFlow. Set up your customers, suppliers, and products before creating transactions.
-        </ThemedText>
-      </ThemedView>
-    </ScrollView>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+        }
+      >
+        {error && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={18} color="#DC2626" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Cards Grid */}
+        <View style={styles.grid}>
+          {dashboardItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.card}
+              onPress={() => navigateToScreen(item.screen)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cardTop}>
+                <View style={[styles.cardIconWrap, { backgroundColor: item.bgColor }]}>
+                  <Ionicons name={item.icon} size={22} color={item.color} />
+                </View>
+                <Text style={[styles.cardCount, { color: item.color }]}>{item.count}</Text>
+              </View>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+              <View style={styles.cardBottom}>
+                <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
+                <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Info Box */}
+        <View style={styles.infoBox}>
+          <View style={styles.infoIconWrap}>
+            <Ionicons name="bulb" size={16} color="#2563EB" />
+          </View>
+          <Text style={styles.infoText}>
+            Master Data is the foundation of YarnFlow. Set up your customers, suppliers, and products before creating transactions.
+          </Text>
+        </View>
+
+        <View style={{ height: 20 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  headerGradient: {
+    paddingTop: 56,
+    paddingBottom: 18,
+    paddingHorizontal: 20,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  header: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    paddingTop: 60,
-    marginBottom: 16,
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 8,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  scrollView: {
+    flex: 1,
   },
   errorContainer: {
     backgroundColor: '#FEF2F2',
     margin: 16,
-    padding: 16,
-    borderRadius: 8,
+    padding: 14,
+    borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   errorText: {
     color: '#DC2626',
     fontSize: 14,
+    flex: 1,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
+    padding: 12,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    margin: 8,
-    width: '45%',
-    borderLeftWidth: 4,
+    borderRadius: 16,
+    padding: 18,
+    margin: 6,
+    width: '46%',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  cardHeader: {
+  cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  icon: {
-    fontSize: 24,
+  cardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  count: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+  cardCount: {
+    fontSize: 28,
+    fontWeight: '800',
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  cardBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cardSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#6B7280',
+    flex: 1,
   },
   infoBox: {
     margin: 16,
-    padding: 16,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 14,
     backgroundColor: '#EFF6FF',
     borderLeftWidth: 4,
     borderLeftColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  infoIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
   },
   infoText: {
-    fontSize: 14,
-    lineHeight: 20,
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
     color: '#1E40AF',
   },
 });

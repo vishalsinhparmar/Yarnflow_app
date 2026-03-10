@@ -1,13 +1,13 @@
-import { StyleSheet, ScrollView, View, Text, ActivityIndicator, RefreshControl } from 'react-native';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'expo-router';
-import { inventoryAPI } from '../../services/index.js';
-import { COLORS, SPACING, BORDER_RADIUS } from '@/constants/colors';
-import StatsCard from '@/components/inventory/StatsCard';
 import CategorySection from '@/components/inventory/CategorySection';
 import SearchBar from '@/components/inventory/SearchBar';
+import StatsCard from '@/components/inventory/StatsCard';
+import { ListSkeleton } from '@/components/ui/SkeletonLoader';
+import { BORDER_RADIUS, COLORS, SPACING } from '@/constants/colors';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { inventoryAPI } from '../../services/index.js';
 
 export default function InventoryScreen() {
   const router = useRouter();
@@ -216,11 +216,16 @@ export default function InventoryScreen() {
   const stats = getStats();
 
   if (loading && !inventory) {
+    return <ListSkeleton count={4} />;
+  }
+
+  if (error && !inventory) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading inventory...</Text>
-      </View>
+      <ErrorState
+        title="Unable to Load Inventory"
+        message={error}
+        onRetry={loadInventory}
+      />
     );
   }
 
@@ -232,10 +237,10 @@ export default function InventoryScreen() {
       }
     >
       {/* Header */}
-      <ThemedView style={styles.header}>
-        <ThemedText type="title">Inventory Management</ThemedText>
-        <ThemedText style={styles.subtitle}>Track and manage inventory from approved GRNs</ThemedText>
-      </ThemedView>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Inventory Management</Text>
+        <Text style={styles.subtitle}>Track and manage inventory from approved GRNs</Text>
+      </View>
 
       {/* Stats Cards */}
       <View style={styles.statsContainer}>
@@ -304,7 +309,7 @@ export default function InventoryScreen() {
         ))
       ) : (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📦</Text>
+          <Ionicons name="cube-outline" size={64} color="#D1D5DB" />
           <Text style={styles.emptyText}>No inventory data available</Text>
           <Text style={styles.emptySubtext}>
             Products that are 100% received from POs will appear here
@@ -320,18 +325,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xl,
-    backgroundColor: COLORS.background,
-  },
-  loadingText: {
-    marginTop: SPACING.md,
-    fontSize: 16,
-    color: COLORS.gray600,
-  },
   header: {
     padding: SPACING.xl,
     paddingTop: 60,
@@ -339,9 +332,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.gray200,
   },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
   subtitle: {
     fontSize: 14,
-    opacity: 0.7,
+    color: '#6B7280',
     marginTop: SPACING.sm,
   },
   statsContainer: {
@@ -377,10 +376,6 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.lg,
     backgroundColor: COLORS.white,
     borderRadius: BORDER_RADIUS.lg,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: SPACING.lg,
   },
   emptyText: {
     fontSize: 18,

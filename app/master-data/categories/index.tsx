@@ -1,24 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  FlatList,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { categoryAPI } from '../../../services/index.js';
-import SearchBar from '@/components/masterdata/SearchBar';
 import CategoryCard from '@/components/masterdata/CategoryCard';
+import SearchBar from '@/components/masterdata/SearchBar';
+import Pagination from '@/components/Pagination';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { categoryAPI } from '../../../services/index.js';
 
 interface Category {
   _id: string;
   categoryName: string;
+  categoryCode?: string;
   description?: string;
+  status?: string;
 }
 
 export default function CategoriesScreen() {
@@ -28,11 +31,24 @@ export default function CategoriesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredCategories, setFilteredCategories] = useState<Category[]>([]);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [pagination, setPagination] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
+  // Debounce search
   useEffect(() => {
-    loadCategories();
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load categories on mount and when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+    loadCategories(1);
+  }, [debouncedSearch]);
 
   // Auto-refresh when screen comes into focus (after form submission)
   useFocusEffect(
@@ -43,31 +59,28 @@ export default function CategoriesScreen() {
     }, [categories.length, searchQuery])
   );
 
-  // Filter categories based on search query
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredCategories(categories);
-    } else {
-      const filtered = categories.filter(category =>
-        category.categoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        category.categoryCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        category.description?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredCategories(filtered);
-    }
-  }, [categories, searchQuery]);
-
-  const loadCategories = async () => {
+  const loadCategories = async (page = 1) => {
     try {
       setLoading(true);
       setError(null);
       
-      const response = await categoryAPI.getAll();
+      const params: any = {
+        page,
+        limit: itemsPerPage,
+      };
+      
+      if (debouncedSearch) {
+        params.search = debouncedSearch;
+      }
+      
+      const response = await categoryAPI.getAll(params);
       
       if (response && response.success && Array.isArray(response.data)) {
         setCategories(response.data);
+        setPagination(response.pagination);
       } else {
         setCategories([]);
+        setPagination(null);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load categories');
@@ -76,6 +89,11 @@ export default function CategoriesScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    loadCategories(page);
   };
 
   const onRefresh = useCallback(async () => {
@@ -135,6 +153,21 @@ export default function CategoriesScreen() {
     />
   );
 
+  const renderFooter = () => {
+    if (!pagination || pagination.pages <= 1) return null;
+    
+    return (
+      <Pagination
+        currentPage={pagination.current || currentPage}
+        totalPages={pagination.pages || 1}
+        totalItems={pagination.total || categories.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={handlePageChange}
+        loading={loading}
+      />
+    );
+  };
+
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="folder-outline" size={64} color="#9CA3AF" />
@@ -193,15 +226,16 @@ export default function CategoriesScreen() {
 
       {/* Category List */}
       <FlatList
-        data={filteredCategories}
+        data={categories}
         renderItem={renderCategory}
         keyExtractor={(item) => item._id}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ListEmptyComponent={renderEmptyState}
+        ListFooterComponent={renderFooter}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={filteredCategories.length === 0 ? styles.emptyContainer : undefined}
+        contentContainerStyle={categories.length === 0 ? styles.emptyContainer : undefined}
       />
 
       {/* Footer Stats */}
@@ -209,7 +243,7 @@ export default function CategoriesScreen() {
         <View style={styles.footer}>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{categories.length}</Text>
+              <Text style={styles.statValue}>{pagination?.total || categories.length}</Text>
               <Text style={styles.statLabel}>Total Categories</Text>
             </View>
             <View style={styles.statDivider} />

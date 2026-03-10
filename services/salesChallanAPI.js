@@ -1,15 +1,18 @@
 // Sales Challan (Delivery) API Service for YarnFlow Mobile
-import { apiRequest as baseRequest } from './common.js';
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { API_BASE_URL, apiRequest as baseRequest } from "./common.js";
 
 // Prefix all sales challan endpoints (note: plural 'sales-challans')
-const apiRequest = (endpoint, options = {}) => baseRequest(`/sales-challans${endpoint}`, options);
+const apiRequest = (endpoint, options = {}) =>
+  baseRequest(`/sales-challans${endpoint}`, options);
 
 // ============ SALES CHALLAN API ============
 export const salesChallanAPI = {
   // Get all sales challans with pagination and filters
   getAll: async (params = {}) => {
     const queryString = new URLSearchParams(params).toString();
-    const endpoint = queryString ? `?${queryString}` : '';
+    const endpoint = queryString ? `?${queryString}` : "";
     return apiRequest(endpoint);
   },
 
@@ -22,8 +25,8 @@ export const salesChallanAPI = {
 
   // Create new sales challan
   create: async (challanData) => {
-    return apiRequest('', {
-      method: 'POST',
+    return apiRequest("", {
+      method: "POST",
       body: JSON.stringify(challanData),
     });
   },
@@ -31,7 +34,7 @@ export const salesChallanAPI = {
   // Update sales challan
   update: async (id, challanData) => {
     return apiRequest(`/${id}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(challanData),
     });
   },
@@ -39,7 +42,7 @@ export const salesChallanAPI = {
   // Delete sales challan
   delete: async (id) => {
     return apiRequest(`/${id}`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 
@@ -61,7 +64,7 @@ export const salesChallanAPI = {
   // Update delivery status
   updateStatus: async (id, status, notes) => {
     return apiRequest(`/${id}/status`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ status, notes }),
     });
   },
@@ -69,7 +72,7 @@ export const salesChallanAPI = {
   // Mark as in transit
   markInTransit: async (id, vehicleDetails) => {
     return apiRequest(`/${id}/in-transit`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(vehicleDetails),
     });
   },
@@ -77,7 +80,7 @@ export const salesChallanAPI = {
   // Mark as delivered
   markDelivered: async (id, deliveryDetails) => {
     return apiRequest(`/${id}/delivered`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(deliveryDetails),
     });
   },
@@ -89,12 +92,98 @@ export const salesChallanAPI = {
 
   // Get challan statistics
   getStats: async () => {
-    return apiRequest('/stats');
+    return apiRequest("/stats");
   },
 
   // Get active deliveries (in transit)
   getActiveDeliveries: async () => {
-    return salesChallanAPI.getByStatus('in_transit');
+    return salesChallanAPI.getByStatus("in_transit");
+  },
+
+  // Download PDF for a single challan
+  downloadPDF: async (id, challanNumber = "Challan") => {
+    try {
+      console.log("📥 Downloading PDF for challan:", id);
+
+      const pdfUrl = `${API_BASE_URL}/sales-challans/${id}/pdf`;
+      const filename = `Sales_Challan_${challanNumber}.pdf`;
+      const fileUri = FileSystem.documentDirectory + filename;
+
+      // Download the PDF file
+      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri);
+
+      if (downloadResult.status !== 200) {
+        throw new Error("Failed to download PDF");
+      }
+
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        return {
+          success: false,
+          message: "Sharing is not available on this device",
+          fileUri: downloadResult.uri,
+        };
+      }
+
+      // Share/open the PDF
+      await Sharing.shareAsync(downloadResult.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: `Sales Challan - ${challanNumber}`,
+      });
+
+      return {
+        success: true,
+        message: "PDF downloaded successfully",
+        fileUri: downloadResult.uri,
+      };
+    } catch (error) {
+      console.error("❌ Error downloading PDF:", error);
+      throw error;
+    }
+  },
+
+  // Download consolidated PDF for SO (all challans)
+  downloadConsolidatedPDF: async (soId, soNumber = "SO") => {
+    try {
+      console.log("📥 Downloading consolidated PDF for SO:", soId);
+
+      const pdfUrl = `${API_BASE_URL}/sales-challans/so/${soId}/consolidated-pdf`;
+      const filename = `SO_${soNumber}_Consolidated.pdf`;
+      const fileUri = FileSystem.documentDirectory + filename;
+
+      // Download the PDF file
+      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri);
+
+      if (downloadResult.status !== 200) {
+        throw new Error("Failed to download consolidated PDF");
+      }
+
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        return {
+          success: false,
+          message: "Sharing is not available on this device",
+          fileUri: downloadResult.uri,
+        };
+      }
+
+      // Share/open the PDF
+      await Sharing.shareAsync(downloadResult.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: `Sales Order ${soNumber} - Consolidated Challans`,
+      });
+
+      return {
+        success: true,
+        message: "Consolidated PDF downloaded successfully",
+        fileUri: downloadResult.uri,
+      };
+    } catch (error) {
+      console.error("❌ Error downloading consolidated PDF:", error);
+      throw error;
+    }
   },
 };
 
@@ -102,55 +191,55 @@ export const salesChallanAPI = {
 export const challanFormatters = {
   // Format challan number
   challanNumber: (number) => {
-    return number || 'N/A';
+    return number || "N/A";
   },
 
   // Format challan status
   status: (status) => {
     const statusMap = {
-      draft: { label: 'Draft', color: '#6B7280', icon: '📝' },
-      pending: { label: 'Pending', color: '#F59E0B', icon: '⏳' },
-      in_transit: { label: 'In Transit', color: '#3B82F6', icon: '🚚' },
-      delivered: { label: 'Delivered', color: '#10B981', icon: '✅' },
-      cancelled: { label: 'Cancelled', color: '#EF4444', icon: '❌' },
-      returned: { label: 'Returned', color: '#8B5CF6', icon: '↩️' },
+      draft: { label: "Draft", color: "#6B7280", icon: "📝" },
+      pending: { label: "Pending", color: "#F59E0B", icon: "⏳" },
+      in_transit: { label: "In Transit", color: "#3B82F6", icon: "🚚" },
+      delivered: { label: "Delivered", color: "#10B981", icon: "✅" },
+      cancelled: { label: "Cancelled", color: "#EF4444", icon: "❌" },
+      returned: { label: "Returned", color: "#8B5CF6", icon: "↩️" },
     };
-    return statusMap[status] || { label: status, color: '#6B7280', icon: '📦' };
+    return statusMap[status] || { label: status, color: "#6B7280", icon: "📦" };
   },
 
   // Format vehicle number
   vehicleNumber: (number) => {
-    if (!number) return 'N/A';
+    if (!number) return "N/A";
     return number.toUpperCase();
   },
 
   // Format driver info
   driverInfo: (driver) => {
-    if (!driver) return 'N/A';
+    if (!driver) return "N/A";
     const { name, phone } = driver;
-    return name && phone ? `${name} (${phone})` : name || phone || 'N/A';
+    return name && phone ? `${name} (${phone})` : name || phone || "N/A";
   },
 
   // Calculate delivery time
   deliveryTime: (dispatchDate, deliveryDate) => {
-    if (!dispatchDate || !deliveryDate) return 'N/A';
+    if (!dispatchDate || !deliveryDate) return "N/A";
     const dispatch = new Date(dispatchDate);
     const delivery = new Date(deliveryDate);
     const diffInHours = Math.floor((delivery - dispatch) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 24) {
       return `${diffInHours} hours`;
     } else {
       const days = Math.floor(diffInHours / 24);
-      return `${days} day${days > 1 ? 's' : ''}`;
+      return `${days} day${days > 1 ? "s" : ""}`;
     }
   },
 
   // Format destination
   destination: (address) => {
-    if (!address) return 'N/A';
+    if (!address) return "N/A";
     const { city, state } = address;
-    return [city, state].filter(Boolean).join(', ') || 'N/A';
+    return [city, state].filter(Boolean).join(", ") || "N/A";
   },
 };
 

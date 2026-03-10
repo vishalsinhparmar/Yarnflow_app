@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SHADOWS, SPACING, BORDER_RADIUS } from '@/constants/colors';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ProductCard from './ProductCard';
 
 interface CategorySectionProps {
@@ -39,12 +39,12 @@ export default function CategorySection({
           <View style={styles.headerText}>
             <Text style={styles.categoryName}>{category.categoryName}</Text>
             <Text style={styles.productCount}>
-              {category.totalProducts || category.products?.length || 0} Products
+              {String(category.totalProducts || category.products?.length || 0)} Products
             </Text>
           </View>
         </View>
         <View style={styles.categoryBadge}>
-          <Text style={styles.categoryBadgeText}>{category.categoryName}</Text>
+          <Text style={styles.categoryBadgeText}>{category.categoryName || ''}</Text>
         </View>
       </TouchableOpacity>
 

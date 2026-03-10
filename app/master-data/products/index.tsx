@@ -1,19 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  FlatList,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { productAPI } from '../../../services/index.js';
-import SearchBar from '@/components/masterdata/SearchBar';
 import ProductCard from '@/components/masterdata/ProductCard';
+import SearchBar from '@/components/masterdata/SearchBar';
+import Pagination from '@/components/Pagination';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { productAPI } from '../../../services/index.js';
 
 interface Product {
   _id: string;
@@ -33,6 +34,8 @@ export default function ProductsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   // Debounce search
   useEffect(() => {
@@ -148,10 +151,9 @@ export default function ProductsScreen() {
     );
   };
 
-  const loadMoreProducts = () => {
-    if (pagination && pagination.hasNextPage && !loading) {
-      loadProducts(pagination.currentPage + 1, true);
-    }
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    loadProducts(page, false);
   };
 
   const renderProduct = ({ item }: { item: Product }) => (
@@ -163,14 +165,17 @@ export default function ProductsScreen() {
   );
 
   const renderFooter = () => {
-    if (!pagination?.hasNextPage) return null;
+    if (!pagination || pagination.pages <= 1) return null;
     
     return (
-      <View style={styles.loadMoreContainer}>
-        <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreProducts}>
-          <Text style={styles.loadMoreText}>Load More</Text>
-        </TouchableOpacity>
-      </View>
+      <Pagination
+        currentPage={pagination.current || currentPage}
+        totalPages={pagination.pages || 1}
+        totalItems={pagination.total || products.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={handlePageChange}
+        loading={loading}
+      />
     );
   };
 
@@ -255,10 +260,10 @@ export default function ProductsScreen() {
       />
 
       {/* Total Count */}
-      {products.length > 0 && (
+      {products.length > 0 && pagination && (
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Total Products: {pagination?.totalDocuments || products.length}
+            Total Products: {pagination?.total || products.length}
           </Text>
         </View>
       )}
@@ -391,23 +396,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
-  },
-  loadMoreContainer: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  loadMoreButton: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  loadMoreText: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '500',
   },
   footer: {
     backgroundColor: '#FFFFFF',

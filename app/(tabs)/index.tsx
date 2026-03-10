@@ -1,16 +1,33 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { DashboardSkeleton } from '@/components/ui/SkeletonLoader';
+import { useAuth } from '@/context/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { dashboardAPI } from '../../services/index.js';
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { user, logout } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          router.replace('/login');
+        },
+      },
+    ]);
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -20,12 +37,10 @@ export default function DashboardScreen() {
     try {
       setError(null);
       const response = await dashboardAPI.getStats();
-      console.log('Dashboard stats response:', response);
-      // Backend returns { success: true, data: {...} }
       if (response?.success && response?.data) {
         setStats(response.data);
       } else {
-        setStats(response); // Fallback if response format is different
+        setStats(response);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load dashboard data');
@@ -42,225 +57,316 @@ export default function DashboardScreen() {
   };
 
   if (loading) {
-    return (
-      <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <ThemedText style={styles.loadingText}>Loading Dashboard...</ThemedText>
-      </ThemedView>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (error) {
     return (
-      <ThemedView style={styles.container}>
-        <ThemedText style={styles.errorText}>⚠️ {error}</ThemedText>
-        <ThemedText style={styles.errorHint}>
+      <View style={styles.errorContainer}>
+        <View style={styles.errorIconWrap}>
+          <Ionicons name="cloud-offline-outline" size={48} color="#EF4444" />
+        </View>
+        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.errorHint}>
           Make sure your backend server is running at the configured API URL
-        </ThemedText>
-        <Text style={styles.retryButton} onPress={loadDashboardData}>
-          Retry
         </Text>
-      </ThemedView>
+        <TouchableOpacity style={styles.retryBtn} onPress={loadDashboardData}>
+          <Ionicons name="refresh" size={18} color="#FFF" />
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
   return (
     <ScrollView
       style={styles.scrollView}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />}
     >
-      <ThemedView style={styles.header}>
-        <ThemedText type="title" style={styles.title}>Dashboard</ThemedText>
-        <ThemedText style={styles.subtitle}>Welcome to YarnFlow</ThemedText>
-      </ThemedView>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <LinearGradient colors={['#F97316', '#EA580C']} style={styles.avatarCircle}>
+              <Ionicons name="person" size={18} color="#FFF" />
+            </LinearGradient>
+            <View>
+              <Text style={styles.greetingText}>Welcome back</Text>
+              <Text style={styles.userEmail}>{user?.email || 'User'}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.title}>Dashboard</Text>
+      </View>
 
       {/* Stats Cards */}
       {stats && (
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>Overview</ThemedText>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Overview</Text>
           <View style={styles.statsGrid}>
-            <TouchableOpacity 
-              style={[styles.statCard, { backgroundColor: '#6366F1' }]}
+            <TouchableOpacity
+              style={styles.statCardWrap}
               onPress={() => router.push('/purchase-orders')}
+              activeOpacity={0.8}
             >
-              <Text style={styles.statIcon}>🛒</Text>
-              <Text style={styles.statValue}>{stats.workflowMetrics?.purchaseOrders || 0}</Text>
-              <Text style={styles.statLabel}>Purchase Orders</Text>
+              <LinearGradient colors={['#6366F1', '#4F46E5']} style={styles.statCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <View style={styles.statIconWrap}>
+                  <Ionicons name="cart" size={22} color="rgba(255,255,255,0.9)" />
+                </View>
+                <Text style={styles.statValue}>{stats.workflowMetrics?.purchaseOrders || 0}</Text>
+                <Text style={styles.statLabel}>Purchase Orders</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statCard, { backgroundColor: '#10B981' }]}
+            <TouchableOpacity
+              style={styles.statCardWrap}
               onPress={() => router.push('/inventory')}
+              activeOpacity={0.8}
             >
-              <Text style={styles.statIcon}>📦</Text>
-              <Text style={styles.statValue}>{stats.workflowMetrics?.inventoryLots || 0}</Text>
-              <Text style={styles.statLabel}>Inventory Lots</Text>
+              <LinearGradient colors={['#10B981', '#059669']} style={styles.statCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <View style={styles.statIconWrap}>
+                  <Ionicons name="cube" size={22} color="rgba(255,255,255,0.9)" />
+                </View>
+                <Text style={styles.statValue}>{stats.workflowMetrics?.inventoryLots || 0}</Text>
+                <Text style={styles.statLabel}>Inventory Lots</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statCard, { backgroundColor: '#F59E0B' }]}
+            <TouchableOpacity
+              style={styles.statCardWrap}
               onPress={() => router.push('/sales-orders')}
+              activeOpacity={0.8}
             >
-              <Text style={styles.statIcon}>💼</Text>
-              <Text style={styles.statValue}>{stats.workflowMetrics?.salesOrders || 0}</Text>
-              <Text style={styles.statLabel}>Sales Orders</Text>
+              <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.statCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <View style={styles.statIconWrap}>
+                  <Ionicons name="pricetag" size={22} color="rgba(255,255,255,0.9)" />
+                </View>
+                <Text style={styles.statValue}>{stats.workflowMetrics?.salesOrders || 0}</Text>
+                <Text style={styles.statLabel}>Sales Orders</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.statCard, { backgroundColor: '#8B5CF6' }]}
+            <TouchableOpacity
+              style={styles.statCardWrap}
               onPress={() => router.push('/sales-challan')}
+              activeOpacity={0.8}
             >
-              <Text style={styles.statIcon}>🚚</Text>
-              <Text style={styles.statValue}>{stats.workflowMetrics?.salesChallans || 0}</Text>
-              <Text style={styles.statLabel}>Active Deliveries</Text>
+              <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.statCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <View style={styles.statIconWrap}>
+                  <Ionicons name="send" size={22} color="rgba(255,255,255,0.9)" />
+                </View>
+                <Text style={styles.statValue}>{stats.workflowMetrics?.salesChallans || 0}</Text>
+                <Text style={styles.statLabel}>Active Deliveries</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
-        </ThemedView>
+        </View>
       )}
 
       {/* Quick Actions */}
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>Quick Actions</ThemedText>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push('/purchase-orders/form')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.actionIcon}>➕</Text>
-            <ThemedText style={styles.actionText}>New Purchase Order</ThemedText>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name="add-circle" size={28} color="#6366F1" />
+            </View>
+            <Text style={styles.actionText}>New Purchase Order</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push('/grn/form')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.actionIcon}>📋</Text>
-            <ThemedText style={styles.actionText}>Record GRN</ThemedText>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="clipboard" size={28} color="#10B981" />
+            </View>
+            <Text style={styles.actionText}>Record GRN</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push('/sales-orders/form')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.actionIcon}>📝</Text>
-            <ThemedText style={styles.actionText}>Create Sales Order</ThemedText>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="create" size={28} color="#F59E0B" />
+            </View>
+            <Text style={styles.actionText}>Create Sales Order</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push('/sales-challan')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.actionIcon}>🚚</Text>
-            <ThemedText style={styles.actionText}>View Deliveries</ThemedText>
+            <View style={[styles.actionIconWrap, { backgroundColor: '#F5F3FF' }]}>
+              <Ionicons name="car" size={28} color="#8B5CF6" />
+            </View>
+            <Text style={styles.actionText}>View Deliveries</Text>
           </TouchableOpacity>
         </View>
-      </ThemedView>
+      </View>
 
       {/* Module Navigation */}
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>Modules</ThemedText>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Modules</Text>
         <View style={styles.modulesGrid}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.moduleCard}
             onPress={() => router.push('/master-data')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.moduleIcon}>📁</Text>
-            <ThemedText style={styles.moduleText}>Master Data</ThemedText>
+            <View style={[styles.moduleIconWrap, { backgroundColor: '#DBEAFE' }]}>
+              <Ionicons name="folder-open" size={26} color="#3B82F6" />
+            </View>
+            <Text style={styles.moduleText}>Master Data</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.moduleCard}
             onPress={() => router.push('/purchase')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.moduleIcon}>🛒</Text>
-            <ThemedText style={styles.moduleText}>Purchase</ThemedText>
+            <View style={[styles.moduleIconWrap, { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name="cart" size={26} color="#6366F1" />
+            </View>
+            <Text style={styles.moduleText}>Purchase</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.moduleCard}
             onPress={() => router.push('/inventory')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.moduleIcon}>📦</Text>
-            <ThemedText style={styles.moduleText}>Inventory</ThemedText>
+            <View style={[styles.moduleIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="cube" size={26} color="#10B981" />
+            </View>
+            <Text style={styles.moduleText}>Inventory</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.moduleCard}
             onPress={() => router.push('/sales')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.moduleIcon}>💼</Text>
-            <ThemedText style={styles.moduleText}>Sales</ThemedText>
+            <View style={[styles.moduleIconWrap, { backgroundColor: '#FFF7ED' }]}>
+              <Ionicons name="pricetag" size={26} color="#F59E0B" />
+            </View>
+            <Text style={styles.moduleText}>Sales</Text>
           </TouchableOpacity>
         </View>
-      </ThemedView>
+      </View>
+
+      <View style={{ height: 20 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
   scrollView: {
     flex: 1,
+    backgroundColor: '#F9FAFB',
   },
   header: {
     padding: 20,
-    paddingTop: 60,
+    paddingTop: 56,
     paddingBottom: 10,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  greetingText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  userEmail: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  logoutButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#111827',
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 16,
-    opacity: 0.6,
-  },
   section: {
-    padding: 20,
-    marginBottom: 10,
+    paddingHorizontal: 20,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    marginBottom: 16,
+    color: '#111827',
+    marginBottom: 14,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
-  statCard: {
+  statCardWrap: {
     flex: 1,
     minWidth: 150,
-    padding: 20,
     borderRadius: 16,
-    alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
   },
-  statIcon: {
-    fontSize: 32,
+  statCard: {
+    padding: 18,
+    alignItems: 'center',
+    borderRadius: 16,
+  },
+  statIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 13,
-    color: '#ffffff',
+    fontSize: 12,
+    color: '#FFFFFF',
     textAlign: 'center',
     opacity: 0.9,
-  },
-  actionIcon: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  moduleIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontWeight: '500',
   },
   actionsGrid: {
     flexDirection: 'row',
@@ -270,61 +376,108 @@ const styles = StyleSheet.create({
   actionCard: {
     flex: 1,
     minWidth: 150,
-    padding: 20,
-    borderRadius: 16,
+    padding: 18,
+    borderRadius: 14,
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  actionIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   actionText: {
     fontSize: 13,
     textAlign: 'center',
-    marginTop: 8,
     fontWeight: '600',
+    color: '#374151',
   },
   modulesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   moduleCard: {
     flex: 1,
     minWidth: 150,
-    padding: 24,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 14,
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  moduleIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   moduleText: {
     fontSize: 14,
     textAlign: 'center',
-    marginTop: 12,
     fontWeight: '600',
+    color: '#374151',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+    backgroundColor: '#F9FAFB',
+  },
+  errorIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
   errorText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#EF4444',
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'center',
   },
   errorHint: {
     fontSize: 14,
-    opacity: 0.7,
+    color: '#6B7280',
     textAlign: 'center',
     marginBottom: 20,
+    lineHeight: 20,
   },
-  retryButton: {
-    fontSize: 16,
-    color: '#6366F1',
-    fontWeight: 'bold',
-    padding: 10,
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFF',
   },
 });

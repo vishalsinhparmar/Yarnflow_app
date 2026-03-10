@@ -1,19 +1,21 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import DatePickerInput from "@/components/DatePickerInput";
+import SearchableModal from "@/components/SearchableModal";
+import { useToast } from "@/components/ui/Toast";
+import { BORDER_RADIUS, COLORS, SHADOWS, SPACING } from "@/constants/colors";
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
-} from 'react-native';
-import { apiRequest } from '../../services/common';
-import { salesOrderAPI } from '../../services/salesOrderAPI';
+    View
+} from "react-native";
+import { apiRequest } from "../../services/common";
+import { salesOrderAPI } from "../../services/salesOrderAPI";
 
 export default function SalesOrderForm() {
   const router = useRouter();
@@ -22,36 +24,70 @@ export default function SalesOrderForm() {
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  
-  const [customers, setCustomers] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
+
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
-    customer: '',
-    expectedDeliveryDate: '',
-    category: '',
-    items: [{ 
-      product: '', 
-      quantity: '', 
-      unit: '', 
-      weight: '', 
-      itemNotes: '',
-      availableStock: 0,
-      totalProductWeight: 0,
-      productStock: 0
-    }],
+    customer: "",
+    customerName: "",
+    expectedDeliveryDate: "",
+    category: "",
+    categoryName: "",
+    items: [
+      {
+        product: "",
+        productName: "",
+        quantity: "",
+        unit: "",
+        weight: "",
+        notes: "",
+        availableStock: 0,
+        totalProductWeight: 0,
+        productStock: 0,
+      },
+    ],
   });
 
+  // Modal states
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [selectedItemIndex, setSelectedItemIndex] = useState(0);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const prevCategoryRef = useRef<string>("");
+  const toast = useToast();
+
   useEffect(() => {
-    loadCustomers();
-    loadCategories();
-    if (isEditMode) loadSalesOrder();
+    const initializeForm = async () => {
+      await loadCustomers();
+      await loadCategories();
+      if (isEditMode) {
+        await loadSalesOrder();
+      } else {
+        setInitialLoadComplete(true);
+      }
+    };
+    initializeForm();
   }, []);
 
   useEffect(() => {
     if (formData.category) {
       loadProducts(formData.category);
+      // Only clear product selections when the user actually changes the category
+      const prevCategory = prevCategoryRef.current;
+      if (prevCategory && prevCategory !== formData.category && initialLoadComplete) {
+        const updatedItems = formData.items.map((item) => ({
+          ...item,
+          product: "",
+          productName: "",
+          unit: "",
+          availableStock: 0,
+        }));
+        setFormData((prev: any) => ({ ...prev, items: updatedItems }));
+      }
+      prevCategoryRef.current = formData.category;
     } else {
       setProducts([]);
     }
@@ -59,70 +95,84 @@ export default function SalesOrderForm() {
 
   const loadCustomers = async () => {
     try {
-      const response = await apiRequest('/master-data/customers');
+      const response = await apiRequest("/master-data/customers");
       if (response?.success) setCustomers(response.data || []);
-    } catch (err) {
-      console.error('Error loading customers:', err);
+    } catch (err: any) {
+      console.error("Error loading customers:", err);
+      toast.showToast('error', 'Load Failed', 'Failed to load customers. Please refresh.');
+      setCustomers([]);
     }
   };
 
   const loadCategories = async () => {
     try {
-      const response = await apiRequest('/master-data/categories');
+      const response = await apiRequest("/master-data/categories");
       if (response?.success) setCategories(response.data || []);
-    } catch (err) {
-      console.error('Error loading categories:', err);
+    } catch (err: any) {
+      console.error("Error loading categories:", err);
+      toast.showToast('error', 'Load Failed', 'Failed to load categories. Please refresh.');
+      setCategories([]);
     }
   };
 
-  const loadProducts = async (categoryId) => {
+  const loadProducts = async (categoryId: string) => {
     try {
-      const response = await apiRequest(`/inventory?category=${categoryId}&populate=product&limit=200`);
-      console.log('Inventory API response:', response);
-      
+      const response = await apiRequest(
+        `/inventory?category=${categoryId}&populate=product&limit=200`,
+      );
+      console.log("Inventory API response:", response);
+
       if (response?.success) {
         let inventoryData = response.data || [];
-        
+
         // Check if data is nested in a category structure
         if (inventoryData.length > 0 && inventoryData[0].products) {
-          // Flatten products from category structure
-          const allProducts = [];
-          inventoryData.forEach(cat => {
+          // Flatten products from category structure - ONLY SHOW PRODUCTS WITH STOCK
+          const allProducts: any[] = [];
+          inventoryData.forEach((cat: any) => {
             if (cat.products && Array.isArray(cat.products)) {
-              cat.products.forEach(prod => {
-                allProducts.push({
-                  _id: prod.productId || prod._id,
-                  productName: prod.productName || 'Unknown Product',
-                  productCode: prod.productCode || '',
-                  unit: prod.unit || 'Bags',
-                  totalStock: prod.totalStock || 0,
-                  totalWeight: prod.totalWeight || 0,
-                });
+              cat.products.forEach((prod: any) => {
+                // Only add products with available stock > 0
+                if ((prod.totalStock || 0) > 0) {
+                  allProducts.push({
+                    _id: prod.productId || prod._id,
+                    productName: prod.productName || "Unknown Product",
+                    productCode: prod.productCode || "",
+                    unit: prod.unit || "Bags",
+                    totalStock: prod.totalStock || 0,
+                    totalWeight: prod.totalWeight || 0,
+                  });
+                }
               });
             }
           });
-          console.log('Loaded products (nested):', allProducts);
-          setProducts(allProducts.filter(p => p._id && p.totalStock > 0));
+          console.log("Loaded products (nested):", allProducts);
+          setProducts(allProducts.filter((p) => p._id && p.totalStock > 0));
         } else {
           // Direct product list
-          const allProducts = inventoryData.map(inv => {
-            const product = inv.product;
-            return {
-              _id: product?._id || inv.product,
-              productName: product?.productName || product?.name || 'Unknown Product',
-              productCode: product?.productCode || product?.code || '',
-              unit: product?.unit || 'Bags',
-              totalStock: inv.totalStock || 0,
-              totalWeight: inv.totalWeight || 0,
-            };
-          }).filter(p => p._id && p.totalStock > 0);
-          
-          console.log('Loaded products (direct):', allProducts);
+          const allProducts = inventoryData
+            .map((inv: any) => {
+              const product = inv.product;
+              return {
+                _id: product?._id || inv.product,
+                productName:
+                  product?.productName || product?.name || "Unknown Product",
+                productCode: product?.productCode || product?.code || "",
+                unit: product?.unit || "Bags",
+                totalStock: inv.totalStock || 0,
+                totalWeight: inv.totalWeight || 0,
+              };
+            })
+            .filter((p: any) => p._id && p.totalStock > 0);
+
+          console.log("Loaded products (direct):", allProducts);
           setProducts(allProducts);
         }
       }
-    } catch (err) {
-      console.error('Error loading products:', err);
+    } catch (err: any) {
+      console.error("Error loading products:", err);
+      toast.showToast('error', 'Load Failed', 'Failed to load products. Please try again.');
+      setProducts([]);
     }
   };
 
@@ -133,78 +183,101 @@ export default function SalesOrderForm() {
       if (response?.success) {
         const so = response.data;
         setFormData({
-          customer: so.customer?._id || so.customer || '',
-          category: so.category?._id || so.category || '',
-          expectedDeliveryDate: so.expectedDeliveryDate 
-            ? new Date(so.expectedDeliveryDate).toISOString().split('T')[0] 
-            : '',
-          items: so.items.map(item => ({
-            product: item.product?._id || item.product || '',
-            quantity: String(item.quantity || ''),
-            unit: item.unit || '',
-            weight: String(item.weight || ''),
-            itemNotes: item.itemNotes || '',
+          customer: so.customer?._id || so.customer || "",
+          customerName: so.customer?.companyName || "",
+          category: so.category?._id || so.category || "",
+          categoryName: so.category?.categoryName || "",
+          expectedDeliveryDate: so.expectedDeliveryDate
+            ? new Date(so.expectedDeliveryDate).toISOString().split("T")[0]
+            : "",
+          items: so.items.map((item: any) => ({
+            product: item.product?._id || item.product || "",
+            productName: item.productName || item.product?.productName || "",
+            quantity: String(item.quantity || ""),
+            unit: item.unit || "",
+            weight: String(item.weight || ""),
+            notes: item.notes || "",
+            availableStock: 0,
+            totalProductWeight: 0,
+            productStock: 0,
           })),
         });
+        setTimeout(() => setInitialLoadComplete(true), 500);
       }
-    } catch (err) {
-      Alert.alert('Error', 'Failed to load sales order');
+    } catch (err: any) {
+      toast.showToast('error', 'Load Failed', err.message || 'Failed to load sales order');
       router.back();
     } finally {
       setLoading(false);
     }
   };
 
+  // SearchableModal is used for all picker modals (customer, category, product)
+
   const handleAddItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { 
-        product: '', 
-        quantity: '', 
-        unit: '', 
-        weight: '', 
-        itemNotes: '',
-        availableStock: 0,
-        totalProductWeight: 0,
-        productStock: 0
-      }],
+      items: [
+        ...formData.items,
+        {
+          product: "",
+          productName: "",
+          quantity: "",
+          unit: "",
+          weight: "",
+          notes: "",
+          availableStock: 0,
+          totalProductWeight: 0,
+          productStock: 0,
+        },
+      ],
     });
   };
 
-  const handleRemoveItem = (index) => {
+  const handleRemoveItem = (index: number) => {
     if (formData.items.length === 1) {
-      Alert.alert('Error', 'At least one item is required');
+      toast.showToast('error', 'Cannot Remove', 'At least one item is required');
       return;
     }
-    const newItems = formData.items.filter((_, i) => i !== index);
+    const newItems = formData.items.filter((_: any, i: number) => i !== index);
     setFormData({ ...formData, items: newItems });
   };
 
-  const handleItemChange = (index, field, value) => {
+  const handleItemChange = (
+    index: number,
+    field: string,
+    value: any,
+    productName?: string,
+  ) => {
     const newItems = [...formData.items];
     newItems[index] = { ...newItems[index], [field]: value };
 
     // Auto-populate unit and stock info when product is selected
-    if (field === 'product') {
-      const selectedProduct = products.find(p => p._id === value);
+    if (field === "product") {
+      const selectedProduct = products.find((p: any) => p._id === value);
       if (selectedProduct) {
+        newItems[index].productName =
+          productName || selectedProduct.productName;
         newItems[index].unit = selectedProduct.unit;
         newItems[index].availableStock = selectedProduct.totalStock;
         newItems[index].totalProductWeight = selectedProduct.totalWeight;
         newItems[index].productStock = selectedProduct.totalStock;
-        
+
         // Auto-calculate weight if quantity already exists
         const qty = Number(newItems[index].quantity) || 0;
         if (qty > 0 && selectedProduct.totalStock > 0) {
-          const weightPerUnit = selectedProduct.totalWeight / selectedProduct.totalStock;
+          const weightPerUnit =
+            selectedProduct.totalWeight / selectedProduct.totalStock;
           newItems[index].weight = String((qty * weightPerUnit).toFixed(2));
         }
       }
     }
 
     // Auto-calculate weight when quantity changes
-    if (field === 'quantity') {
-      const product = products.find(p => p._id === newItems[index].product);
+    if (field === "quantity") {
+      const product = products.find(
+        (p: any) => p._id === newItems[index].product,
+      );
       if (product && product.totalStock > 0) {
         const weightPerUnit = product.totalWeight / product.totalStock;
         const qty = Number(value) || 0;
@@ -219,26 +292,35 @@ export default function SalesOrderForm() {
 
   const validateForm = () => {
     if (!formData.customer) {
-      Alert.alert('Validation Error', 'Please select a customer');
+      toast.showToast('error', 'Validation Error', 'Please select a customer');
       return false;
     }
     if (!formData.category) {
-      Alert.alert('Validation Error', 'Please select a category');
+      toast.showToast('error', 'Validation Error', 'Please select a category');
       return false;
+    }
+    if (formData.expectedDeliveryDate) {
+      const deliveryDate = new Date(formData.expectedDeliveryDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (deliveryDate < today) {
+        toast.showToast('error', 'Invalid Date', 'Expected delivery date cannot be in the past');
+        return false;
+      }
     }
     for (let i = 0; i < formData.items.length; i++) {
       const item = formData.items[i];
       if (!item.product) {
-        Alert.alert('Validation Error', `Please select a product for item ${i + 1}`);
+        toast.showToast('error', 'Missing Product', `Please select a product for item ${i + 1}`);
         return false;
       }
       if (!item.quantity || Number(item.quantity) <= 0) {
-        Alert.alert('Validation Error', `Please enter a valid quantity for item ${i + 1}`);
+        toast.showToast('error', 'Invalid Quantity', `Please enter a valid quantity for item ${i + 1}`);
         return false;
       }
-      const product = products.find(p => p._id === item.product);
+      const product = products.find((p) => p._id === item.product);
       if (product && Number(item.quantity) > product.totalStock) {
-        Alert.alert('Stock Error', `Item ${i + 1}: Requested quantity (${item.quantity}) exceeds available stock (${product.totalStock})`);
+        toast.showToast('error', 'Insufficient Stock', `Item ${i + 1}: Requested quantity (${item.quantity}) exceeds available stock (${product.totalStock})`);
         return false;
       }
     }
@@ -250,15 +332,15 @@ export default function SalesOrderForm() {
 
     try {
       setSubmitting(true);
-      const payload = {
+      const payload: any = {
         customer: formData.customer,
         category: formData.category,
-        items: formData.items.map(item => ({
+        items: formData.items.map((item) => ({
           product: item.product,
           quantity: Number(item.quantity),
-          unit: item.unit || 'Bags',
+          unit: item.unit || "Bags",
           weight: Number(item.weight) || 0,
-          notes: item.itemNotes || '', // Changed from itemNotes to notes to match backend
+          notes: item.notes || "",
         })),
       };
 
@@ -266,24 +348,22 @@ export default function SalesOrderForm() {
         payload.expectedDeliveryDate = formData.expectedDeliveryDate;
       }
 
-      console.log('📦 Submitting payload:', JSON.stringify(payload, null, 2));
+      console.log("📦 Submitting payload:", JSON.stringify(payload, null, 2));
 
       if (isEditMode) {
         const response = await salesOrderAPI.update(id, payload);
-        console.log('✅ Update response:', response);
-        Alert.alert('Success', 'Sales order updated successfully', [
-          { text: 'OK', onPress: () => router.push('/sales-orders') }
-        ]);
+        console.log("✅ Update response:", response);
+        toast.showToast('success', 'Order Updated', 'Sales order has been updated successfully.');
+        router.push("/sales-orders");
       } else {
         const response = await salesOrderAPI.create(payload);
-        console.log('✅ Create response:', response);
-        Alert.alert('Success', 'Sales order created successfully', [
-          { text: 'OK', onPress: () => router.push('/sales-orders') }
-        ]);
+        console.log("✅ Create response:", response);
+        toast.showToast('success', 'Order Created', 'Sales order has been created successfully.');
+        router.push("/sales-orders");
       }
-    } catch (err) {
-      console.error('Error submitting form:', err);
-      Alert.alert('Error', err.message || 'Failed to save sales order');
+    } catch (err: any) {
+      console.error("Error submitting form:", err);
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save sales order');
     } finally {
       setSubmitting(false);
     }
@@ -300,70 +380,96 @@ export default function SalesOrderForm() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Sales Order' : 'New Sales Order'}</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="close" size={24} color="#111827" />
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.gray900} />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {isEditMode ? "Edit Sales Order" : "New Sales Order"}
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Basic Information */}
         <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
-          
-          <View style={styles.row}>
-            <View style={[styles.fieldContainer, { flex: 1 }]}>
-              <Text style={styles.label}>Customer <Text style={styles.required}>*</Text></Text>
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={formData.customer}
-                  onValueChange={(value) => setFormData({ ...formData, customer: value })}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Select Customer" value="" />
-                  {customers.map((c) => (
-                    <Picker.Item key={c._id} label={c.companyName} value={c._id} />
-                  ))}
-                </Picker>
-              </View>
-            </View>
 
-            <View style={[styles.fieldContainer, { flex: 1 }]}>
-              <Text style={styles.label}>Expected Delivery Date</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                value={formData.expectedDeliveryDate}
-                onChangeText={(value) => setFormData({ ...formData, expectedDeliveryDate: value })}
-              />
-            </View>
+          {/* Customer Selection */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Customer *</Text>
+            <TouchableOpacity
+              style={styles.pickerButton}
+              onPress={() => setShowCustomerModal(true)}
+            >
+              <Text
+                style={[
+                  styles.pickerButtonText,
+                  !formData.customer && styles.placeholderText,
+                ]}
+                numberOfLines={1}
+              >
+                {formData.customerName || "Select Customer"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Category <Text style={styles.required}>*</Text></Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={formData.category}
-                onValueChange={(value) => setFormData({ ...formData, category: value })}
-                style={styles.picker}
+          {/* Expected Delivery Date */}
+          <View style={styles.inputGroup}>
+            <DatePickerInput
+              label="Expected Delivery Date"
+              value={formData.expectedDeliveryDate}
+              onChange={(date: string) =>
+                setFormData({ ...formData, expectedDeliveryDate: date })
+              }
+              placeholder="Select delivery date"
+              minimumDate={new Date()}
+            />
+          </View>
+
+          {/* Category Selection */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Category *</Text>
+            <TouchableOpacity
+              style={styles.pickerButton}
+              onPress={() => setShowCategoryModal(true)}
+            >
+              <Text
+                style={[
+                  styles.pickerButtonText,
+                  !formData.category && styles.placeholderText,
+                ]}
               >
-                <Picker.Item label="Select Category" value="" />
-                {categories.map((c) => (
-                  <Picker.Item key={c._id} label={c.categoryName} value={c._id} />
-                ))}
-              </Picker>
-            </View>
+                {formData.categoryName || "Select Category"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+            </TouchableOpacity>
             {!formData.category && (
-              <Text style={styles.helperText}>ℹ️ Select a category first to see available products from inventory</Text>
+              <Text style={styles.infoText}>
+                Select a category first to see available products from inventory
+              </Text>
             )}
           </View>
         </View>
 
+        {/* Items Section */}
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Items</Text>
+            <Text style={styles.sectionTitle}>Order Items</Text>
             <TouchableOpacity
-              style={styles.addButton}
+              style={[
+                styles.addButton,
+                !formData.category && styles.addButtonDisabled,
+              ]}
               onPress={handleAddItem}
               disabled={!formData.category}
             >
@@ -373,62 +479,108 @@ export default function SalesOrderForm() {
           </View>
 
           {formData.items.map((item, index) => {
-            const selectedProduct = products.find(p => p._id === item.product);
-            const weightPerUnit = selectedProduct && selectedProduct.totalStock > 0
-              ? selectedProduct.totalWeight / selectedProduct.totalStock
-              : 0;
+            const selectedProduct = products.find(
+              (p: any) => p._id === item.product,
+            );
+            const weightPerUnit =
+              selectedProduct && selectedProduct.totalStock > 0
+                ? selectedProduct.totalWeight / selectedProduct.totalStock
+                : 0;
 
             return (
               <View key={index} style={styles.itemCard}>
                 <View style={styles.itemHeader}>
                   <Text style={styles.itemTitle}>Item {index + 1}</Text>
                   {formData.items.length > 1 && (
-                    <TouchableOpacity onPress={() => handleRemoveItem(index)}>
-                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                    <TouchableOpacity
+                      onPress={() => handleRemoveItem(index)}
+                      style={styles.removeButton}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color="#EF4444"
+                      />
                     </TouchableOpacity>
                   )}
                 </View>
 
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.label}>Product <Text style={styles.required}>*</Text></Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={item.product}
-                      onValueChange={(value) => handleItemChange(index, 'product', value)}
-                      style={styles.picker}
-                      enabled={!!formData.category}
+                {/* Product Selection */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Product *</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.pickerButton,
+                      !formData.category && styles.disabledPicker,
+                    ]}
+                    onPress={() => {
+                      if (!formData.category) {
+                        toast.showToast('info', 'Category Required', 'Please select a category first');
+                        return;
+                      }
+                      if (products.length === 0) {
+                        toast.showToast('info', 'No Products', 'No products with stock available for this category');
+                        return;
+                      }
+                      setSelectedItemIndex(index);
+                      setShowProductModal(true);
+                    }}
+                    disabled={!formData.category}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerButtonText,
+                        !item.product && styles.placeholderText,
+                        !formData.category && styles.disabledText,
+                      ]}
+                      numberOfLines={1}
                     >
-                      <Picker.Item 
-                        label={formData.category ? "Select Product" : "Select Category First"} 
-                        value="" 
-                      />
-                      {products.map((p) => (
-                        <Picker.Item
-                          key={p._id}
-                          label={`${p.productName} (Stock: ${p.totalStock} ${p.unit})`}
-                          value={p._id}
-                        />
-                      ))}
-                    </Picker>
-                  </View>
+                      {!formData.category
+                        ? "Select category first"
+                        : item.productName || "Select Product"}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={20}
+                      color={
+                        !formData.category ? COLORS.gray400 : COLORS.gray500
+                      }
+                    />
+                  </TouchableOpacity>
                   {selectedProduct && (
-                    <Text style={styles.stockText}>Available: {selectedProduct.totalStock} {selectedProduct.unit}</Text>
+                    <Text style={styles.stockText}>
+                      📦 Available: {selectedProduct.totalStock}{" "}
+                      {selectedProduct.unit}
+                    </Text>
                   )}
                 </View>
 
+                {/* Quantity, Unit, Weight Row */}
                 <View style={styles.row}>
-                  <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.label}>Quantity <Text style={styles.required}>*</Text></Text>
+                  <View
+                    style={[
+                      styles.inputGroup,
+                      { flex: 1, marginRight: SPACING.sm },
+                    ]}
+                  >
+                    <Text style={styles.label}>Quantity *</Text>
                     <TextInput
                       style={styles.input}
                       keyboardType="numeric"
                       value={item.quantity}
-                      onChangeText={(value) => handleItemChange(index, 'quantity', value)}
+                      onChangeText={(value) =>
+                        handleItemChange(index, "quantity", value)
+                      }
                       placeholder="0"
                     />
                   </View>
 
-                  <View style={[styles.fieldContainer, { flex: 1 }]}>
+                  <View
+                    style={[
+                      styles.inputGroup,
+                      { flex: 1, marginRight: SPACING.sm },
+                    ]}
+                  >
                     <Text style={styles.label}>Unit</Text>
                     <TextInput
                       style={[styles.input, styles.inputDisabled]}
@@ -439,12 +591,16 @@ export default function SalesOrderForm() {
                   </View>
 
                   <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.label}>Weight (Kg) <Text style={styles.required}>*</Text></Text>
+                    <Text style={styles.label}>
+                      Weight (Kg) <Text style={{ color: COLORS.danger }}>*</Text>
+                    </Text>
                     <TextInput
                       style={styles.input}
                       keyboardType="numeric"
                       value={item.weight}
-                      onChangeText={(value) => handleItemChange(index, 'weight', value)}
+                      onChangeText={(value) =>
+                        handleItemChange(index, "weight", value)
+                      }
                       placeholder="0"
                     />
                   </View>
@@ -452,7 +608,10 @@ export default function SalesOrderForm() {
 
                 {selectedProduct && weightPerUnit > 0 && (
                   <Text style={styles.suggestedText}>
-                    Suggested: {((Number(item.quantity) || 0) * weightPerUnit).toFixed(2)} Kg ({weightPerUnit.toFixed(2)} Kg per {selectedProduct.unit})
+                    Suggested:{" "}
+                    {((Number(item.quantity) || 0) * weightPerUnit).toFixed(2)}{" "}
+                    Kg ({weightPerUnit.toFixed(2)} Kg per {selectedProduct.unit}
+                    )
                   </Text>
                 )}
 
@@ -462,11 +621,15 @@ export default function SalesOrderForm() {
                     style={[styles.input, styles.textArea]}
                     multiline
                     numberOfLines={3}
-                    value={item.itemNotes}
-                    onChangeText={(value) => handleItemChange(index, 'itemNotes', value)}
+                    value={item.notes}
+                    onChangeText={(value) =>
+                      handleItemChange(index, "notes", value)
+                    }
                     placeholder="Special instructions for this item (optional)"
                   />
-                  <Text style={styles.noteInfo}>📄 These notes will appear on the challan and PDF</Text>
+                  <Text style={styles.noteInfo}>
+                    📄 These notes will appear on the challan and PDF
+                  </Text>
                 </View>
               </View>
             );
@@ -483,7 +646,10 @@ export default function SalesOrderForm() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+            style={[
+              styles.submitButton,
+              submitting && styles.submitButtonDisabled,
+            ]}
             onPress={handleSubmit}
             disabled={submitting}
           >
@@ -491,123 +657,279 @@ export default function SalesOrderForm() {
               <ActivityIndicator size="small" color="#FFF" />
             ) : (
               <Text style={styles.submitButtonText}>
-                {isEditMode ? 'Update Order' : 'Create Order'}
+                {isEditMode ? "Update Order" : "Create Order"}
               </Text>
             )}
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Customer Modal */}
+      <SearchableModal
+        visible={showCustomerModal}
+        onClose={() => setShowCustomerModal(false)}
+        title="Select Customer"
+        options={customers}
+        selectedValue={formData.customer}
+        onSelect={(value: string, item: any) =>
+          setFormData({ ...formData, customer: value, customerName: item.companyName })
+        }
+        getLabel={(c: any) => c.companyName}
+        getValue={(c: any) => c._id}
+        searchPlaceholder="Search customers by name..."
+        emptyMessage="No customers found"
+      />
+
+      {/* Category Modal */}
+      <SearchableModal
+        visible={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        title="Select Category"
+        options={categories}
+        selectedValue={formData.category}
+        onSelect={(value: string, item: any) =>
+          setFormData({ ...formData, category: value, categoryName: item.categoryName })
+        }
+        getLabel={(c: any) => c.categoryName}
+        getValue={(c: any) => c._id}
+        searchPlaceholder="Search categories..."
+        emptyMessage="No categories found"
+      />
+
+      {/* Product Modal */}
+      <SearchableModal
+        visible={showProductModal}
+        onClose={() => setShowProductModal(false)}
+        title="Select Product"
+        options={products}
+        selectedValue={formData.items[selectedItemIndex]?.product || ""}
+        onSelect={(value: string, item: any) =>
+          handleItemChange(selectedItemIndex, "product", value, item?.productName)
+        }
+        getLabel={(p: any) => p.productName}
+        getValue={(p: any) => p._id}
+        getSubtitle={(p: any) => `Stock: ${p.totalStock} ${p.unit}`}
+        searchPlaceholder="Search products..."
+        emptyMessage={!formData.category ? "Select a category first" : "No products with stock available"}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#6B7280' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+  container: { flex: 1, backgroundColor: COLORS.gray50 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: COLORS.gray50,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
+  loadingText: { marginTop: 12, fontSize: 16, color: COLORS.gray600 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
+    paddingTop: 50,
+  },
+  backButton: {
+    padding: SPACING.xs,
+  },
+  headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.gray900 },
   scrollView: { flex: 1 },
   formSection: {
-    backgroundColor: '#FFF',
-    margin: 16,
-    padding: 16,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: COLORS.white,
+    margin: SPACING.lg,
+    padding: SPACING.lg,
+    borderRadius: BORDER_RADIUS.md,
+    ...SHADOWS.small,
   },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginBottom: 16 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: COLORS.gray900,
+    marginBottom: SPACING.lg,
+  },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.lg,
   },
   addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B82F6',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: BORDER_RADIUS.sm,
     gap: 4,
   },
-  addButtonText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
-  row: { flexDirection: 'row', gap: 12 },
-  fieldContainer: { marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
-  required: { color: '#EF4444' },
+  addButtonDisabled: {
+    opacity: 0.5,
+  },
+  addButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "600" },
+  row: { flexDirection: "row", gap: 12 },
+  inputGroup: { marginBottom: SPACING.md },
+  fieldContainer: { marginBottom: SPACING.md },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.gray700,
+    marginBottom: SPACING.xs,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: COLORS.gray300,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
     fontSize: 14,
-    color: '#111827',
-    backgroundColor: '#FFF',
+    color: COLORS.gray900,
+    backgroundColor: COLORS.white,
+    minHeight: 50,
   },
-  inputDisabled: { backgroundColor: '#F3F4F6', color: '#6B7280' },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  pickerWrapper: {
+  inputDisabled: { backgroundColor: COLORS.gray100, color: COLORS.gray500 },
+  textArea: { height: 80, textAlignVertical: "top" },
+  pickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 6,
-    backgroundColor: '#FFF',
+    borderColor: COLORS.gray300,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.white,
+    minHeight: 50,
   },
-  picker: { height: 50 },
-  helperText: { fontSize: 12, color: '#3B82F6', marginTop: 4 },
-  stockText: { fontSize: 12, color: '#6B7280', marginTop: 4 },
-  suggestedText: { fontSize: 12, color: '#6B7280', marginTop: 4 },
-  noteInfo: { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
+  pickerButtonText: {
+    fontSize: 14,
+    color: COLORS.gray900,
+    flex: 1,
+  },
+  placeholderText: {
+    color: COLORS.gray500,
+  },
+  disabledPicker: {
+    backgroundColor: COLORS.gray100,
+    borderColor: COLORS.gray200,
+  },
+  disabledText: {
+    color: COLORS.gray400,
+  },
+  infoText: {
+    fontSize: 12,
+    color: COLORS.info,
+    marginTop: SPACING.xs,
+    fontStyle: "italic",
+  },
+  stockText: {
+    fontSize: 12,
+    color: COLORS.success,
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  suggestedText: { fontSize: 12, color: COLORS.gray500, marginTop: 4 },
+  noteInfo: { fontSize: 11, color: COLORS.gray400, marginTop: 4 },
   itemCard: {
-    backgroundColor: '#F9FAFB',
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 12,
+    backgroundColor: COLORS.gray50,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.sm,
+    marginBottom: SPACING.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: COLORS.gray200,
   },
   itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.md,
   },
-  itemTitle: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
+  itemTitle: { fontSize: 16, fontWeight: "bold", color: COLORS.gray900 },
+  removeButton: {
+    padding: SPACING.xs,
+  },
   actions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
-    padding: 16,
+    padding: SPACING.lg,
     paddingBottom: 32,
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: BORDER_RADIUS.md,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
+    borderColor: COLORS.gray300,
+    alignItems: "center",
   },
-  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  cancelButtonText: { fontSize: 16, fontWeight: "600", color: COLORS.gray700 },
   submitButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
   },
   submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { fontSize: 16, fontWeight: '600', color: '#FFF' },
+  submitButtonText: { fontSize: 16, fontWeight: "600", color: COLORS.white },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: BORDER_RADIUS.lg,
+    borderTopRightRadius: BORDER_RADIUS.lg,
+    maxHeight: "70%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: COLORS.gray900,
+  },
+  modalCloseButton: {
+    padding: SPACING.xs,
+  },
+  optionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray100,
+  },
+  selectedOption: {
+    backgroundColor: COLORS.primaryLight,
+  },
+  optionText: {
+    fontSize: 16,
+    color: COLORS.gray900,
+  },
+  selectedOptionText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
+  optionSubtitle: {
+    fontSize: 12,
+    color: COLORS.gray500,
+    marginTop: 2,
+  },
 });

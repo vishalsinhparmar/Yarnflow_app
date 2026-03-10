@@ -1,8 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import ErrorState from "@/components/ui/ErrorState";
+import { ListSkeleton } from "@/components/ui/SkeletonLoader";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -10,62 +12,134 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-} from 'react-native';
-import { grnAPI } from '../../services/grnAPI';
+} from "react-native";
+import Pagination from "../../components/Pagination";
+import { grnAPI } from "../../services/grnAPI";
+
+interface GRNListItem {
+  _id: string;
+  grnNumber: string;
+  purchaseOrder?: {
+    _id: string;
+    poNumber: string;
+    supplier?: {
+      companyName: string;
+    };
+    supplierDetails?: {
+      companyName: string;
+    };
+  };
+  poNumber?: string;
+  receiptDate: string;
+  status: string;
+  receiptStatus?: string;
+  items?: any[];
+  warehouseLocation?: string;
+  createdAt: string;
+}
+
+interface GRNStats {
+  totalGRNs: number;
+  completedGRNs: number;
+  thisMonth: number;
+}
 
 export default function GRNListScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const [grns, setGrns] = useState([]);
-  const [stats, setStats] = useState({
+  const [grns, setGrns] = useState<GRNListItem[]>([]);
+  const [stats, setStats] = useState<GRNStats>({
     totalGRNs: 0,
     completedGRNs: 0,
     thisMonth: 0,
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState(params.filter || 'all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const itemsPerPage = 10;
 
+  // Load data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log("📋 GRN screen focused - loading data");
+      setLoading(true);
+      setError(null);
+      Promise.all([loadGRNs(), loadStats()])
+        .catch((err: any) => setError(err.message || 'Failed to load GRN data'))
+        .finally(() => {
+          setLoading(false);
+        });
+    }, [statusFilter, currentPage]),
+  );
+
+  // Reset to page 1 when search or filter changes
   useEffect(() => {
-    loadGRNs();
-    loadStats();
-  }, [statusFilter]);
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [searchQuery, statusFilter]);
 
   useEffect(() => {
     if (params.filter && params.filter !== statusFilter) {
-      setStatusFilter(params.filter);
+      const filterValue = Array.isArray(params.filter)
+        ? params.filter[0]
+        : params.filter;
+      setStatusFilter(filterValue);
     }
   }, [params.filter]);
 
   const loadGRNs = async () => {
     try {
-      console.log('📋 Loading GRNs with params:', { statusFilter, limit: 100 });
-      
-      const params = {
-        limit: 100,
-        sort: '-createdAt',
-        populate: 'purchaseOrder,purchaseOrder.supplier',
+      console.log("📋 Loading GRNs with params:", {
+        statusFilter,
+        currentPage,
+      });
+
+      const queryParams: any = {
+        limit: itemsPerPage,
+        page: currentPage,
+        sort: "-createdAt",
       };
 
-      if (statusFilter !== 'all') {
-        params.status = statusFilter;
+      // Only add status filter if not "All"
+      if (statusFilter && statusFilter !== "All" && statusFilter !== "all") {
+        queryParams.status = statusFilter;
       }
 
-      const response = await grnAPI.getAll(params);
-      console.log('📋 GRNs response:', { count: response?.data?.length, filter: statusFilter });
+      const response = await grnAPI.getAll(queryParams);
+      console.log("📋 GRNs response:", {
+        success: response?.success,
+        count: response?.data?.length,
+        pagination: response?.pagination,
+      });
 
-      if (response?.success && response?.data) {
-        setGrns(response.data);
+      if (response && response.success) {
+        setGrns(response.data || []);
+        // Backend returns 'pages' and 'total' not 'totalPages' and 'totalItems'
+        setTotalPages(
+          response.pagination?.pages || response.pagination?.totalPages || 1,
+        );
+        setTotalItems(
+          response.pagination?.total ||
+            response.pagination?.totalItems ||
+            response.data?.length ||
+            0,
+        );
       } else {
+        console.log("📋 No GRN data or failed response");
         setGrns([]);
       }
-    } catch (error) {
-      console.error('❌ Error loading GRNs:', error);
+    } catch (err: any) {
+      console.error("❌ Error loading GRNs:", err);
       setGrns([]);
+      throw err;
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -73,18 +147,20 @@ export default function GRNListScreen() {
   const loadStats = async () => {
     try {
       const response = await grnAPI.getStats();
-      console.log('📊 GRN Stats response:', response);
+      console.log("📊 GRN Stats response:", response);
 
       if (response?.success && response?.data) {
         const data = response.data;
+        // Backend may return completed, complete, or completedGRNs
+        const completedCount = data.completedGRNs || data.completed || data.complete || data.completeCount || 0;
         setStats({
-          totalGRNs: data.totalGRNs || 0,
-          completedGRNs: data.completedGRNs || 0,
+          totalGRNs: data.totalGRNs || data.total || 0,
+          completedGRNs: completedCount,
           thisMonth: data.thisMonth || 0,
         });
       }
     } catch (error) {
-      console.error('❌ Error loading stats:', error);
+      console.error("❌ Error loading stats:", error);
     }
   };
 
@@ -95,14 +171,14 @@ export default function GRNListScreen() {
   }, [statusFilter]);
 
   const handleAddGRN = () => {
-    router.push('/grn/form');
+    router.push("/grn/form");
   };
 
-  const handleViewGRN = (grnId) => {
+  const handleViewGRN = (grnId: string) => {
     router.push(`/grn/${grnId}`);
   };
 
-  const renderFilterButton = (label, value) => {
+  const renderFilterButton = (label: string, value: string) => {
     const isActive = statusFilter === value;
     return (
       <TouchableOpacity
@@ -110,102 +186,162 @@ export default function GRNListScreen() {
         style={[styles.filterButton, isActive && styles.filterButtonActive]}
         onPress={() => setStatusFilter(value)}
       >
-        <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>
+        <Text
+          style={[
+            styles.filterButtonText,
+            isActive && styles.filterButtonTextActive,
+          ]}
+        >
           {label}
         </Text>
       </TouchableOpacity>
     );
   };
 
-  const getStatusColor = (status) => {
-    const statusColors = {
-      Complete: '#10B981',
-      Completed: '#10B981',
-      Pending: '#F59E0B',
-      Draft: '#6B7280',
-      Approved: '#3B82F6',
+  const getStatusColor = (status: string) => {
+    const statusColors: Record<string, string> = {
+      Complete: "#10B981",
+      Completed: "#10B981",
+      Pending: "#F59E0B",
+      Draft: "#6B7280",
+      Approved: "#3B82F6",
+      Received: "#3B82F6",
     };
-    return statusColors[status] || '#6B7280';
+    return statusColors[status] || "#6B7280";
   };
 
-  const filteredGRNs = grns.filter(grn => {
+  const getReceiptStatusColor = (status: string) => {
+    const statusColors: Record<string, string> = {
+      Complete: "#10B981",
+      Partial: "#F59E0B",
+      Pending: "#6B7280",
+    };
+    return statusColors[status] || "#6B7280";
+  };
+
+  const filteredGRNs = grns.filter((grn) => {
     if (!searchQuery) return true;
-    
+
     const query = searchQuery.toLowerCase();
-    const grnNumber = grn.grnNumber?.toLowerCase() || '';
-    const poNumber = grn.purchaseOrder?.poNumber?.toLowerCase() || '';
-    const supplier = grn.purchaseOrder?.supplierDetails?.companyName?.toLowerCase() || 
-                     grn.purchaseOrder?.supplier?.companyName?.toLowerCase() || '';
-    
-    return grnNumber.includes(query) || poNumber.includes(query) || supplier.includes(query);
+    const grnNumber = grn.grnNumber?.toLowerCase() || "";
+    const poNumber = grn.purchaseOrder?.poNumber?.toLowerCase() || "";
+    const supplier =
+      grn.purchaseOrder?.supplierDetails?.companyName?.toLowerCase() ||
+      grn.purchaseOrder?.supplier?.companyName?.toLowerCase() ||
+      "";
+
+    return (
+      grnNumber.includes(query) ||
+      poNumber.includes(query) ||
+      supplier.includes(query)
+    );
   });
 
   if (loading) {
+    return <ListSkeleton count={4} />;
+  }
+
+  if (error && grns.length === 0) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
-        <Text style={styles.loadingText}>Loading GRNs...</Text>
-      </View>
+      <ErrorState
+        title="Unable to Load GRNs"
+        message={error}
+        onRetry={() => {
+          setLoading(true);
+          setError(null);
+          Promise.all([loadGRNs(), loadStats()])
+            .catch((err: any) => setError(err.message || 'Failed to load GRN data'))
+            .finally(() => setLoading(false));
+        }}
+      />
     );
   }
 
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <LinearGradient colors={['#10B981', '#059669']} style={styles.headerGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
         <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>Goods Receipt Notes</Text>
-            <Text style={styles.headerSubtitle}>Track incoming goods and materials</Text>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="clipboard" size={20} color="#FFF" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>Goods Receipt Notes</Text>
+              <Text style={styles.headerSubtitle}>
+                Track incoming goods & materials
+              </Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddGRN}>
-            <Ionicons name="add" size={24} color="#fff" />
+          <TouchableOpacity style={styles.addButton} onPress={handleAddGRN} activeOpacity={0.8}>
+            <Ionicons name="add" size={20} color="#10B981" />
+            <Text style={styles.addButtonText}>New</Text>
           </TouchableOpacity>
         </View>
+      </LinearGradient>
 
+      <View style={styles.subHeader}>
         {/* Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
+            <View style={[styles.statIconWrap, { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name="layers" size={16} color="#6366F1" />
+            </View>
             <Text style={styles.statValue}>{stats.totalGRNs}</Text>
-            <Text style={styles.statLabel}>Total GRNs</Text>
+            <Text style={styles.statLabel}>Total</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#10B981' }]}>{stats.completedGRNs}</Text>
+            <View style={[styles.statIconWrap, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="checkmark-done" size={16} color="#10B981" />
+            </View>
+            <Text style={[styles.statValue, { color: "#10B981" }]}>
+              {stats.completedGRNs}
+            </Text>
             <Text style={styles.statLabel}>Completed</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: '#3B82F6' }]}>{stats.thisMonth}</Text>
+            <View style={[styles.statIconWrap, { backgroundColor: '#DBEAFE' }]}>
+              <Ionicons name="calendar" size={16} color="#3B82F6" />
+            </View>
+            <Text style={[styles.statValue, { color: "#3B82F6" }]}>
+              {stats.thisMonth}
+            </Text>
             <Text style={styles.statLabel}>This Month</Text>
           </View>
         </View>
 
         {/* Search */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+          <Ionicons
+            name="search"
+            size={20}
+            color="#9CA3AF"
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search GRNs by number, PO reference, supplier..."
+            placeholder="Search GRNs by number, PO, supplier..."
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholderTextColor="#9CA3AF"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
               <Ionicons name="close-circle" size={20} color="#9CA3AF" />
             </TouchableOpacity>
           )}
         </View>
 
         {/* Filters */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           style={styles.filterContainer}
         >
-          {renderFilterButton('All Status', 'all')}
-          {renderFilterButton('Complete', 'Complete')}
-          {renderFilterButton('Pending', 'Pending')}
-          {renderFilterButton('Draft', 'Draft')}
+          {renderFilterButton("All Status", "all")}
+          {renderFilterButton("Complete", "Complete")}
+          {renderFilterButton("Pending", "Pending")}
+          {renderFilterButton("Draft", "Draft")}
         </ScrollView>
       </View>
 
@@ -213,24 +349,35 @@ export default function GRNListScreen() {
       <ScrollView
         style={styles.listContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10B981']} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#10B981"]}
+          />
         }
       >
         {filteredGRNs.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="document-text-outline" size={64} color="#D1D5DB" />
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No GRNs match your search' : 
-               statusFilter !== 'all' ? `No ${statusFilter} GRNs found` : 
-               'No GRNs found'}
+              {searchQuery
+                ? "No GRNs match your search"
+                : statusFilter !== "all"
+                  ? `No ${statusFilter} GRNs found`
+                  : "No GRNs found"}
             </Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? 'Try a different search term' :
-               statusFilter !== 'all' ? 'Try selecting a different filter' :
-               'Create your first GRN to get started'}
+              {searchQuery
+                ? "Try a different search term"
+                : statusFilter !== "all"
+                  ? "Try selecting a different filter"
+                  : "Create your first GRN to get started"}
             </Text>
-            {!searchQuery && statusFilter === 'all' && (
-              <TouchableOpacity style={styles.emptyButton} onPress={handleAddGRN}>
+            {!searchQuery && statusFilter === "all" && (
+              <TouchableOpacity
+                style={styles.emptyButton}
+                onPress={handleAddGRN}
+              >
                 <Text style={styles.emptyButtonText}>+ Create GRN</Text>
               </TouchableOpacity>
             )}
@@ -247,11 +394,66 @@ export default function GRNListScreen() {
                 {/* Header */}
                 <View style={styles.grnCardHeader}>
                   <View style={styles.grnCardHeaderLeft}>
-                    <Text style={styles.grnNumber}>{grn.grnNumber || 'N/A'}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(grn.status) + '20' }]}>
-                      <Text style={[styles.statusText, { color: getStatusColor(grn.status) }]}>
-                        {grn.status || 'Draft'}
+                    <View style={styles.grnNumberRow}>
+                      <Text style={styles.grnNumber}>
+                        {grn.grnNumber || "N/A"}
                       </Text>
+                      {grn.receiptStatus === "Partial" &&
+                        grn.purchaseOrder?._id && (
+                          <TouchableOpacity
+                            style={styles.addGrnButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              router.push(
+                                `/grn/form?poId=${grn.purchaseOrder._id}`,
+                              );
+                            }}
+                          >
+                            <Ionicons name="add" size={14} color="#fff" />
+                            <Text style={styles.addGrnButtonText}>Add GRN</Text>
+                          </TouchableOpacity>
+                        )}
+                    </View>
+                    <View style={styles.statusBadgeRow}>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor: getStatusColor(grn.status) + "20",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            { color: getStatusColor(grn.status) },
+                          ]}
+                        >
+                          {grn.status || "Draft"}
+                        </Text>
+                      </View>
+                      {grn.receiptStatus && (
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor:
+                                getReceiptStatusColor(grn.receiptStatus) + "20",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                color: getReceiptStatusColor(grn.receiptStatus),
+                              },
+                            ]}
+                          >
+                            {grn.receiptStatus}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
@@ -262,7 +464,7 @@ export default function GRNListScreen() {
                   <Ionicons name="document-text" size={16} color="#6B7280" />
                   <Text style={styles.grnCardLabel}>PO Reference:</Text>
                   <Text style={styles.grnCardValue}>
-                    {grn.purchaseOrder?.poNumber || 'N/A'}
+                    {grn.purchaseOrder?.poNumber || "N/A"}
                   </Text>
                 </View>
 
@@ -271,9 +473,9 @@ export default function GRNListScreen() {
                   <Ionicons name="business" size={16} color="#6B7280" />
                   <Text style={styles.grnCardLabel}>Supplier:</Text>
                   <Text style={styles.grnCardValue}>
-                    {grn.purchaseOrder?.supplierDetails?.companyName || 
-                     grn.purchaseOrder?.supplier?.companyName || 
-                     'Unknown'}
+                    {grn.purchaseOrder?.supplierDetails?.companyName ||
+                      grn.purchaseOrder?.supplier?.companyName ||
+                      "Unknown"}
                   </Text>
                 </View>
 
@@ -282,7 +484,9 @@ export default function GRNListScreen() {
                   <Ionicons name="calendar" size={16} color="#6B7280" />
                   <Text style={styles.grnCardLabel}>Receipt Date:</Text>
                   <Text style={styles.grnCardValue}>
-                    {grn.receiptDate ? new Date(grn.receiptDate).toLocaleDateString() : 'N/A'}
+                    {grn.receiptDate
+                      ? new Date(grn.receiptDate).toLocaleDateString()
+                      : "N/A"}
                   </Text>
                 </View>
 
@@ -291,7 +495,8 @@ export default function GRNListScreen() {
                   <Ionicons name="cube" size={16} color="#6B7280" />
                   <Text style={styles.grnCardLabel}>Items:</Text>
                   <Text style={styles.grnCardValue}>
-                    {grn.items?.length || 0} {grn.items?.length === 1 ? 'item' : 'items'} received
+                    {grn.items?.length || 0}{" "}
+                    {grn.items?.length === 1 ? "item" : "items"} received
                   </Text>
                 </View>
 
@@ -309,6 +514,18 @@ export default function GRNListScreen() {
             ))}
           </View>
         )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            loading={loading}
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -317,85 +534,128 @@ export default function GRNListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
   },
   centerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
   },
-  header: {
-    backgroundColor: '#fff',
-    paddingTop: 60,
+  headerGradient: {
+    paddingTop: 56,
+    paddingBottom: 18,
     paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFF",
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
+    marginTop: 2,
   },
   addButton: {
-    backgroundColor: '#10B981',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#10B981",
+  },
+  subHeader: {
+    backgroundColor: "#FFF",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
   statsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
-    padding: 16,
+    backgroundColor: "#FFF",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  statIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 2,
+    fontWeight: "500",
   },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     paddingHorizontal: 12,
-    marginBottom: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
   },
   searchIcon: {
     marginRight: 8,
@@ -404,29 +664,29 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     fontSize: 14,
-    color: '#111827',
+    color: "#111827",
   },
   filterContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 8,
   },
   filterButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
     marginRight: 8,
   },
   filterButtonActive: {
-    backgroundColor: '#10B981',
+    backgroundColor: "#10B981",
   },
   filterButtonText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+    fontWeight: "500",
+    color: "#6B7280",
   },
   filterButtonTextActive: {
-    color: '#fff',
+    color: "#fff",
   },
   listContainer: {
     flex: 1,
@@ -436,36 +696,59 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   grnCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
   grnCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: "#F3F4F6",
   },
   grnCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    flex: 1,
+  },
+  grnNumberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
   },
   grnNumber: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
+  },
+  addGrnButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#10B981",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  addGrnButtonText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  statusBadgeRow: {
+    flexDirection: "row",
+    gap: 6,
+    flexWrap: "wrap",
   },
   statusBadge: {
     paddingHorizontal: 10,
@@ -474,54 +757,54 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   grnCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
     gap: 8,
   },
   grnCardLabel: {
     fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: "#6B7280",
+    fontWeight: "500",
   },
   grnCardValue: {
     fontSize: 13,
-    color: '#111827',
+    color: "#111827",
     flex: 1,
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 80,
     paddingHorizontal: 40,
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: "600",
+    color: "#374151",
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptyButton: {
     marginTop: 24,
-    backgroundColor: '#10B981',
+    backgroundColor: "#10B981",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   emptyButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

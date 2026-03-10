@@ -62,24 +62,85 @@ export const grnAPI = {
   getStats: async () => {
     return apiRequest('/stats');
   },
+
+  // Approve GRN and create inventory lots
+  approve: async (id, approvedBy = 'Mobile User', notes = '') => {
+    return apiRequest(`/${id}/approve`, {
+      method: 'PATCH',
+      body: JSON.stringify({ approvedBy, notes }),
+    });
+  },
+
+  // Update GRN status
+  updateStatus: async (id, status, notes = '') => {
+    return apiRequest(`/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, notes }),
+    });
+  },
 };
 
 // ============ UTILITY FUNCTIONS ============
-export const grnFormatters = {
-  // Format GRN number
-  grnNumber: (number) => {
-    return number || 'N/A';
+export const grnUtils = {
+  // Format GRN status for display
+  formatStatus: (status) => {
+    const statusMap = {
+      'Draft': 'Draft',
+      'Received': 'Received',
+      'Under_Review': 'Under Review',
+      'Approved': 'Approved',
+      'Rejected': 'Rejected',
+      'Completed': 'Completed',
+      'Complete': 'Complete',
+      'Partial': 'Partial',
+      'Pending': 'Pending'
+    };
+    return statusMap[status] || status;
   },
 
-  // Format GRN status
-  status: (status) => {
-    const statusMap = {
-      draft: { label: 'Draft', color: '#6B7280' },
-      pending: { label: 'Pending', color: '#F59E0B' },
-      approved: { label: 'Approved', color: '#10B981' },
-      rejected: { label: 'Rejected', color: '#EF4444' },
+  // Get status color for UI
+  getStatusColor: (status) => {
+    const colorMap = {
+      'Draft': '#6B7280',
+      'Received': '#3B82F6',
+      'Under_Review': '#F59E0B',
+      'Approved': '#10B981',
+      'Rejected': '#EF4444',
+      'Completed': '#10B981',
+      'Complete': '#10B981',
+      'Partial': '#F59E0B',
+      'Pending': '#F59E0B'
     };
-    return statusMap[status] || { label: status, color: '#6B7280' };
+    return colorMap[status] || '#6B7280';
+  },
+
+  // Format date
+  formatDate: (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-GB', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  },
+
+  // Format quantity with unit
+  formatQuantity: (quantity, unit) => {
+    return `${quantity || 0} ${unit || ''}`;
+  },
+
+  // Calculate completion percentage
+  calculateCompletion: (items) => {
+    if (!items || items.length === 0) return 0;
+    
+    const totalItems = items.length;
+    const completedItems = items.filter(item => {
+      const ordered = item.orderedQuantity || 0;
+      const received = (item.previouslyReceived || 0) + (item.receivedQuantity || 0);
+      return received >= ordered || item.manuallyCompleted;
+    }).length;
+    
+    return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   },
 
   // Calculate total received quantity
@@ -89,18 +150,26 @@ export const grnFormatters = {
 
   // Calculate total weight
   calculateTotalWeight: (items) => {
-    return items.reduce((sum, item) => sum + (item.actualWeight || 0), 0);
+    return items.reduce((sum, item) => sum + (item.receivedWeight || 0), 0);
   },
 
-  // Quality check status
-  qualityStatus: (status) => {
-    const statusMap = {
-      passed: { label: 'Passed', color: '#10B981' },
-      failed: { label: 'Failed', color: '#EF4444' },
-      pending: { label: 'Pending', color: '#F59E0B' },
-    };
-    return statusMap[status] || { label: status, color: '#6B7280' };
+  // Calculate weight per unit
+  calculateWeightPerUnit: (orderedWeight, orderedQuantity) => {
+    if (!orderedQuantity || orderedQuantity === 0) return 0;
+    return orderedWeight / orderedQuantity;
   },
+
+  // Check if GRN can be edited
+  canEdit: (status) => {
+    return ['Draft', 'Received', 'Pending'].includes(status);
+  },
+
+  // Check if GRN can be deleted
+  canDelete: (status) => {
+    return status === 'Draft';
+  }
 };
+
+export const grnFormatters = grnUtils;
 
 export default grnAPI;

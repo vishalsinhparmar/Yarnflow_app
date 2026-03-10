@@ -1,19 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  FlatList,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { customerAPI } from '../../../services/index.js';
-import SearchBar from '@/components/masterdata/SearchBar';
 import CustomerCard from '@/components/masterdata/CustomerCard';
+import SearchBar from '@/components/masterdata/SearchBar';
+import Pagination from '@/components/Pagination';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { customerAPI } from '../../../services/index.js';
 
 interface Customer {
   _id: string;
@@ -35,6 +36,8 @@ export default function CustomersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   // Debounce search
   useEffect(() => {
@@ -151,10 +154,9 @@ export default function CustomersScreen() {
     );
   };
 
-  const loadMoreCustomers = () => {
-    if (pagination && pagination.hasNextPage && !loading) {
-      loadCustomers(pagination.currentPage + 1, true);
-    }
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    loadCustomers(page, false);
   };
 
   const renderCustomer = ({ item }: { item: Customer }) => (
@@ -166,14 +168,17 @@ export default function CustomersScreen() {
   );
 
   const renderFooter = () => {
-    if (!pagination?.hasNextPage) return null;
+    if (!pagination || pagination.pages <= 1) return null;
     
     return (
-      <View style={styles.loadMoreContainer}>
-        <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreCustomers}>
-          <Text style={styles.loadMoreText}>Load More</Text>
-        </TouchableOpacity>
-      </View>
+      <Pagination
+        currentPage={pagination.current || currentPage}
+        totalPages={pagination.pages || 1}
+        totalItems={pagination.total || customers.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={handlePageChange}
+        loading={loading}
+      />
     );
   };
 
@@ -249,10 +254,10 @@ export default function CustomersScreen() {
       />
 
       {/* Total Count */}
-      {customers.length > 0 && (
+      {customers.length > 0 && pagination && (
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Total Customers: {pagination?.totalDocuments || customers.length}
+            Total Customers: {pagination?.total || customers.length}
           </Text>
         </View>
       )}
@@ -365,23 +370,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
-  },
-  loadMoreContainer: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  loadMoreButton: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  loadMoreText: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '500',
   },
   footer: {
     backgroundColor: '#FFFFFF',

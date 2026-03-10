@@ -1,18 +1,48 @@
-// Warehouse Locations for YarnFlow
+// Warehouse Location Constants
+// These are the fixed warehouse locations used throughout the application
+
 export const WAREHOUSE_LOCATIONS = [
-  { id: 'godown-maryadpatti', name: 'Godown - Maryadpatti', address: 'Maryadpatti, Punjab' },
-  { id: 'godown-ludhiana', name: 'Godown - Ludhiana', address: 'Ludhiana, Punjab' },
-  { id: 'godown-amritsar', name: 'Godown - Amritsar', address: 'Amritsar, Punjab' },
-  { id: 'warehouse-main', name: 'Main Warehouse', address: 'Main Location' },
-  { id: 'warehouse-secondary', name: 'Secondary Warehouse', address: 'Secondary Location' },
+  {
+    id: "shop-chakinayat",
+    name: "Shop - Chakinayat",
+    code: "SHP-CHK",
+
+    type: "Shop",
+  },
+  {
+    id: "godown-maryadpatti",
+    name: "Godown -Maryadpatti",
+    code: "MYD-GDN",
+    type: "Godown",
+  },
+  {
+    id: "others",
+    name: "Others",
+    code: "OTH",
+    type: "Others",
+  },
 ];
 
-export const getWarehouseName = (id) => {
-  const warehouse = WAREHOUSE_LOCATIONS.find(w => w.id === id);
-  return warehouse ? warehouse.name : id || 'Unknown Location';
+// Helper function to get warehouse name by ID
+export const getWarehouseName = (warehouseId) => {
+  const warehouse = WAREHOUSE_LOCATIONS.find((w) => w.id === warehouseId);
+  return warehouse ? warehouse.name : warehouseId || "N/A";
 };
 
-export const getWarehouseAddress = (id) => {
-  const warehouse = WAREHOUSE_LOCATIONS.find(w => w.id === id);
-  return warehouse ? warehouse.address : '';
+// Helper function to get warehouse by ID
+export const getWarehouseById = (warehouseId) => {
+  return WAREHOUSE_LOCATIONS.find((w) => w.id === warehouseId);
+};
+
+// Helper function to get all warehouse names as array
+export const getWarehouseNames = () => {
+  return WAREHOUSE_LOCATIONS.map((w) => w.name);
+};
+
+// Helper function to get warehouse options for dropdown
+export const getWarehouseOptions = () => {
+  return WAREHOUSE_LOCATIONS.map((w) => ({
+    value: w.id,
+    label: w.name,
+  }));
 };

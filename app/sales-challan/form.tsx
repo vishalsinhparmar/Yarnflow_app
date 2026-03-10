@@ -1,7 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import DatePickerInput from "@/components/DatePickerInput";
+import SearchableModal from "@/components/SearchableModal";
+import { BORDER_RADIUS, COLORS, SPACING } from "@/constants/colors";
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -11,10 +13,10 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-} from 'react-native';
-import { WAREHOUSE_LOCATIONS } from '../../constants/warehouseLocations';
-import { salesChallanAPI } from '../../services/salesChallanAPI';
-import { salesOrderAPI } from '../../services/salesOrderAPI';
+} from "react-native";
+import { WAREHOUSE_LOCATIONS } from "../../constants/warehouseLocations";
+import { salesChallanAPI } from "../../services/salesChallanAPI";
+import { salesOrderAPI } from "../../services/salesOrderAPI";
 
 export default function SalesChallanFormScreen() {
   const router = useRouter();
@@ -26,18 +28,24 @@ export default function SalesChallanFormScreen() {
   const [salesOrders, setSalesOrders] = useState([]);
   const [selectedSO, setSelectedSO] = useState(null);
   const [loadingSOs, setLoadingSOs] = useState(true);
-  const [dispatchedQuantities, setDispatchedQuantities] = useState<{[key: string]: number}>({});
+  const [dispatchedQuantities, setDispatchedQuantities] = useState<{
+    [key: string]: number;
+  }>({});
 
   const [formData, setFormData] = useState({
-    salesOrder: soId || '',
-    challanDate: new Date().toISOString().split('T')[0],
-    expectedDeliveryDate: '',
-    warehouseLocation: '',
-    notes: '',
+    salesOrder: soId || "",
+    challanDate: new Date().toISOString().split("T")[0],
+    expectedDeliveryDate: "",
+    warehouseLocation: "",
+    notes: "",
     items: [],
   });
 
   const [errors, setErrors] = useState({});
+
+  // Modal states for custom pickers
+  const [showSOModal, setShowSOModal] = useState(false);
+  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
 
   // Load sales orders
   useEffect(() => {
@@ -61,15 +69,15 @@ export default function SalesChallanFormScreen() {
   const loadSalesOrders = async () => {
     try {
       setLoadingSOs(true);
-      console.log('🔗 Loading sales orders...');
+      console.log("🔗 Loading sales orders...");
 
       const response = await salesOrderAPI.getAll({ limit: 100 });
-      console.log('📦 SOs response:', response);
+      console.log("📦 SOs response:", response);
 
       if (response?.success && response?.data) {
         // Filter out fully delivered/cancelled SOs
         const incompleteSOs = response.data.filter(
-          so => so.status !== 'Delivered' && so.status !== 'Cancelled'
+          (so) => so.status !== "Delivered" && so.status !== "Cancelled",
         );
         setSalesOrders(incompleteSOs);
         console.log(`✅ Loaded ${incompleteSOs.length} incomplete SOs`);
@@ -77,7 +85,7 @@ export default function SalesChallanFormScreen() {
         setSalesOrders([]);
       }
     } catch (error) {
-      console.error('❌ Error loading SOs:', error);
+      console.error("❌ Error loading SOs:", error);
       setSalesOrders([]);
     } finally {
       setLoadingSOs(false);
@@ -92,29 +100,30 @@ export default function SalesChallanFormScreen() {
       if (response?.success && response?.data) {
         const challan = response.data;
         setFormData({
-          salesOrder: challan.salesOrder?._id || '',
+          salesOrder: challan.salesOrder?._id || "",
           challanDate: challan.challanDate
-            ? new Date(challan.challanDate).toISOString().split('T')[0]
-            : '',
+            ? new Date(challan.challanDate).toISOString().split("T")[0]
+            : "",
           expectedDeliveryDate: challan.expectedDeliveryDate
-            ? new Date(challan.expectedDeliveryDate).toISOString().split('T')[0]
-            : '',
-          warehouseLocation: challan.warehouseLocation || '',
-          notes: challan.notes || '',
-          items: challan.items?.map((item: any) => ({
-            salesOrderItem: item.salesOrderItem || item._id,
-            product: item.product?._id,
-            productName: item.productName,
-            productCode: item.productCode,
-            orderedQuantity: item.orderedQuantity,
-            dispatchQuantity: item.dispatchQuantity || 0,
-            previouslyDispatched: 0,
-            pendingQuantity: 0,
-            unit: item.unit,
-            weight: item.weight || 0,
-            markAsComplete: item.markAsComplete || false,
-            notes: item.notes || '',
-          })) || [],
+            ? new Date(challan.expectedDeliveryDate).toISOString().split("T")[0]
+            : "",
+          warehouseLocation: challan.warehouseLocation || "",
+          notes: challan.notes || "",
+          items:
+            challan.items?.map((item: any) => ({
+              salesOrderItem: item.salesOrderItem || item._id,
+              product: item.product?._id,
+              productName: item.productName,
+              productCode: item.productCode,
+              orderedQuantity: item.orderedQuantity,
+              dispatchQuantity: item.dispatchQuantity || 0,
+              previouslyDispatched: 0,
+              pendingQuantity: 0,
+              unit: item.unit,
+              weight: item.weight || 0,
+              markAsComplete: item.markAsComplete || false,
+              notes: item.notes || "",
+            })) || [],
         });
 
         if (challan.salesOrder) {
@@ -122,8 +131,8 @@ export default function SalesChallanFormScreen() {
         }
       }
     } catch (error) {
-      console.error('❌ Error loading challan:', error);
-      Alert.alert('Error', 'Failed to load challan details');
+      console.error("❌ Error loading challan:", error);
+      Alert.alert("Error", "Failed to load challan details");
     } finally {
       setLoading(false);
     }
@@ -132,17 +141,17 @@ export default function SalesChallanFormScreen() {
   const handleSOSelection = async (soId: string) => {
     if (!soId) {
       setSelectedSO(null);
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        salesOrder: '',
+        salesOrder: "",
         items: [],
       }));
       return;
     }
 
     try {
-      console.log('🔗 Loading SO details:', soId);
-      
+      console.log("🔗 Loading SO details:", soId);
+
       // Load SO and dispatched quantities in parallel
       const [soResponse, dispatchedResponse] = await Promise.all([
         salesOrderAPI.getById(soId),
@@ -152,17 +161,19 @@ export default function SalesChallanFormScreen() {
       if (soResponse?.success && soResponse?.data) {
         const so = soResponse.data;
         setSelectedSO(so);
-        console.log('📦 SO loaded:', so.soNumber);
+        console.log("📦 SO loaded:", so.soNumber);
 
         // Build dispatched map
-        const dispatchedMap: {[key: string]: number} = {};
+        const dispatchedMap: { [key: string]: number } = {};
         if (dispatchedResponse?.success && dispatchedResponse?.data) {
           dispatchedResponse.data.forEach((challan: any) => {
             if (challan.items) {
               challan.items.forEach((item: any) => {
-                const itemId = item.salesOrderItem?.toString() || item._id?.toString();
+                const itemId =
+                  item.salesOrderItem?.toString() || item._id?.toString();
                 if (itemId) {
-                  dispatchedMap[itemId] = (dispatchedMap[itemId] || 0) + (item.dispatchQuantity || 0);
+                  dispatchedMap[itemId] =
+                    (dispatchedMap[itemId] || 0) + (item.dispatchQuantity || 0);
                 }
               });
             }
@@ -171,30 +182,34 @@ export default function SalesChallanFormScreen() {
         setDispatchedQuantities(dispatchedMap);
 
         // Populate items
-        const items = so.items.map((item: any) => {
-          const dispatched = dispatchedMap[item._id] || 0;
-          const remaining = Math.max(0, item.quantity - dispatched);
-          const weightPerUnit = item.weight / item.quantity;
-          const remainingWeight = remaining * weightPerUnit;
+        const items = so.items
+          .map((item: any) => {
+            const dispatched = dispatchedMap[item._id] || 0;
+            const remaining = Math.max(0, item.quantity - dispatched);
+            const weightPerUnit = item.weight / item.quantity;
+            const remainingWeight = remaining * weightPerUnit;
 
-          return {
-            salesOrderItem: item._id,
-            product: item.product?._id,
-            productName: item.product?.productName || item.productName,
-            productCode: item.product?.productCode || item.productCode,
-            orderedQuantity: item.quantity,
-            dispatchQuantity: remaining,
-            previouslyDispatched: dispatched,
-            pendingQuantity: 0,
-            unit: item.unit,
-            weight: remainingWeight,
-            weightPerUnit: weightPerUnit,
-            markAsComplete: false,
-            notes: item.notes || '',
-          };
-        }).filter((item: any) => item.orderedQuantity - item.previouslyDispatched > 0);
+            return {
+              salesOrderItem: item._id,
+              product: item.product?._id,
+              productName: item.product?.productName || item.productName,
+              productCode: item.product?.productCode || item.productCode,
+              orderedQuantity: item.quantity,
+              dispatchQuantity: remaining,
+              previouslyDispatched: dispatched,
+              pendingQuantity: 0,
+              unit: item.unit,
+              weight: remainingWeight,
+              weightPerUnit: weightPerUnit,
+              markAsComplete: false,
+              notes: item.notes || "",
+            };
+          })
+          .filter(
+            (item: any) => item.orderedQuantity - item.previouslyDispatched > 0,
+          );
 
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           salesOrder: soId,
           items,
@@ -203,21 +218,21 @@ export default function SalesChallanFormScreen() {
         console.log(`✅ Loaded ${items.length} pending items`);
       }
     } catch (error) {
-      console.error('❌ Error loading SO:', error);
-      Alert.alert('Error', 'Failed to load SO details');
+      console.error("❌ Error loading SO:", error);
+      Alert.alert("Error", "Failed to load SO details");
     }
   };
 
   const handleChange = (field: string, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
 
     if (errors[field]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [field]: '',
+        [field]: "",
       }));
     }
   };
@@ -230,15 +245,15 @@ export default function SalesChallanFormScreen() {
     };
 
     // Auto-calculate weight and pending
-    if (field === 'dispatchQuantity') {
+    if (field === "dispatchQuantity") {
       const item = updatedItems[index];
       const quantity = Number(value) || 0;
       updatedItems[index].weight = quantity * (item.weightPerUnit || 0);
-      updatedItems[index].pendingQuantity = 
+      updatedItems[index].pendingQuantity =
         item.orderedQuantity - item.previouslyDispatched - quantity;
     }
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       items: updatedItems,
     }));
@@ -248,15 +263,15 @@ export default function SalesChallanFormScreen() {
     const newErrors: any = {};
 
     if (!formData.salesOrder) {
-      newErrors.salesOrder = 'Sales Order is required';
+      newErrors.salesOrder = "Sales Order is required";
     }
 
     if (!formData.challanDate) {
-      newErrors.challanDate = 'Challan date is required';
+      newErrors.challanDate = "Challan date is required";
     }
 
     if (!formData.warehouseLocation) {
-      newErrors.warehouseLocation = 'Warehouse Location is required';
+      newErrors.warehouseLocation = "Warehouse Location is required";
     }
 
     // Check if at least one item has dispatch quantity
@@ -275,7 +290,7 @@ export default function SalesChallanFormScreen() {
     });
 
     if (!hasAtLeastOneItem) {
-      newErrors.items = 'Please enter dispatch quantity for at least one item';
+      newErrors.items = "Please enter dispatch quantity for at least one item";
     }
 
     setErrors(newErrors);
@@ -284,13 +299,16 @@ export default function SalesChallanFormScreen() {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert('Validation Error', 'Please fill all required fields correctly');
+      Alert.alert(
+        "Validation Error",
+        "Please fill all required fields correctly",
+      );
       return;
     }
 
     try {
       setSubmitting(true);
-      console.log('📦 Submitting challan:', formData);
+      console.log("📦 Submitting challan:", formData);
 
       const submitData = {
         salesOrder: formData.salesOrder,
@@ -310,7 +328,7 @@ export default function SalesChallanFormScreen() {
             unit: item.unit,
             weight: Number(item.weight),
             markAsComplete: item.markAsComplete || false,
-            notes: item.notes || '',
+            notes: item.notes || "",
           })),
       };
 
@@ -321,25 +339,25 @@ export default function SalesChallanFormScreen() {
         response = await salesChallanAPI.create(submitData);
       }
 
-      console.log('✅ Challan response:', response);
+      console.log("✅ Challan response:", response);
 
       if (response?.success) {
         Alert.alert(
-          'Success',
-          `Challan ${isEditMode ? 'updated' : 'created'} successfully!`,
+          "Success",
+          `Challan ${isEditMode ? "updated" : "created"} successfully!`,
           [
             {
-              text: 'OK',
+              text: "OK",
               onPress: () => router.back(),
             },
-          ]
+          ],
         );
       } else {
-        throw new Error(response?.message || 'Failed to save challan');
+        throw new Error(response?.message || "Failed to save challan");
       }
     } catch (error) {
-      console.error('❌ Error submitting challan:', error);
-      Alert.alert('Error', error.message || 'Failed to save challan');
+      console.error("❌ Error submitting challan:", error);
+      Alert.alert("Error", error.message || "Failed to save challan");
     } finally {
       setSubmitting(false);
     }
@@ -358,11 +376,14 @@ export default function SalesChallanFormScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {isEditMode ? 'Edit Challan' : 'Create Sales Challan'}
+          {isEditMode ? "Edit Challan" : "Create Sales Challan"}
         </Text>
         <View style={{ width: 40 }} />
       </View>
@@ -375,29 +396,29 @@ export default function SalesChallanFormScreen() {
           {/* Sales Order */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Sales Order *</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={formData.salesOrder}
-                onValueChange={(value) => {
-                  handleChange('salesOrder', value);
-                  handleSOSelection(value);
-                }}
-                enabled={!isEditMode && !loadingSOs}
-                style={styles.picker}
+            <TouchableOpacity
+              style={[
+                styles.pickerButton,
+                isEditMode && styles.pickerButtonDisabled,
+              ]}
+              onPress={() => !isEditMode && !loadingSOs && setShowSOModal(true)}
+              disabled={isEditMode || loadingSOs}
+            >
+              <Text
+                style={[
+                  styles.pickerButtonText,
+                  !formData.salesOrder && styles.placeholderText,
+                ]}
+                numberOfLines={1}
               >
-                <Picker.Item
-                  label={loadingSOs ? 'Loading...' : 'Select Sales Order'}
-                  value=""
-                />
-                {salesOrders.map((so: any) => (
-                  <Picker.Item
-                    key={so._id}
-                    label={`${so.soNumber} - ${so.customer?.companyName || 'Unknown'}`}
-                    value={so._id}
-                  />
-                ))}
-              </Picker>
-            </View>
+                {loadingSOs
+                  ? "Loading..."
+                  : selectedSO
+                    ? `${selectedSO.soNumber} - ${selectedSO.customer?.companyName || "Unknown"}`
+                    : "Select Sales Order"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+            </TouchableOpacity>
             {errors.salesOrder && (
               <Text style={styles.errorText}>{errors.salesOrder}</Text>
             )}
@@ -406,12 +427,10 @@ export default function SalesChallanFormScreen() {
           {/* Challan Date */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Challan Date *</Text>
-            <TextInput
-              style={styles.input}
+            <DatePickerInput
               value={formData.challanDate}
-              onChangeText={(value) => handleChange('challanDate', value)}
-              placeholder="YYYY-MM-DD (e.g., 2025-11-16)"
-              placeholderTextColor="#9CA3AF"
+              onChange={(value) => handleChange("challanDate", value)}
+              placeholder="Select challan date"
             />
             {errors.challanDate && (
               <Text style={styles.errorText}>{errors.challanDate}</Text>
@@ -421,12 +440,10 @@ export default function SalesChallanFormScreen() {
           {/* Expected Delivery Date */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Expected Delivery Date</Text>
-            <TextInput
-              style={styles.input}
+            <DatePickerInput
               value={formData.expectedDeliveryDate}
-              onChangeText={(value) => handleChange('expectedDeliveryDate', value)}
-              placeholder="YYYY-MM-DD (Optional)"
-              placeholderTextColor="#9CA3AF"
+              onChange={(value) => handleChange("expectedDeliveryDate", value)}
+              placeholder="Select expected delivery date (Optional)"
             />
           </View>
         </View>
@@ -438,22 +455,24 @@ export default function SalesChallanFormScreen() {
           {/* Warehouse Location */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Warehouse Location *</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={formData.warehouseLocation}
-                onValueChange={(value) => handleChange('warehouseLocation', value)}
-                style={styles.picker}
+            <TouchableOpacity
+              style={styles.pickerButton}
+              onPress={() => setShowWarehouseModal(true)}
+            >
+              <Text
+                style={[
+                  styles.pickerButtonText,
+                  !formData.warehouseLocation && styles.placeholderText,
+                ]}
               >
-                <Picker.Item label="Select Warehouse Location" value="" />
-                {WAREHOUSE_LOCATIONS.map((warehouse) => (
-                  <Picker.Item
-                    key={warehouse.id}
-                    label={warehouse.name}
-                    value={warehouse.id}
-                  />
-                ))}
-              </Picker>
-            </View>
+                {formData.warehouseLocation
+                  ? WAREHOUSE_LOCATIONS.find(
+                      (w) => w.id === formData.warehouseLocation,
+                    )?.name || "Select Warehouse"
+                  : "Select Warehouse Location"}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+            </TouchableOpacity>
             {errors.warehouseLocation && (
               <Text style={styles.errorText}>{errors.warehouseLocation}</Text>
             )}
@@ -465,7 +484,7 @@ export default function SalesChallanFormScreen() {
             <TextInput
               style={styles.input}
               value={formData.notes}
-              onChangeText={(value) => handleChange('notes', value)}
+              onChangeText={(value) => handleChange("notes", value)}
               placeholder="Special dispatch instructions (optional)"
               placeholderTextColor="#9CA3AF"
             />
@@ -476,7 +495,9 @@ export default function SalesChallanFormScreen() {
         {selectedSO && formData.items.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Items to Dispatch</Text>
-            {errors.items && <Text style={styles.errorText}>{errors.items}</Text>}
+            {errors.items && (
+              <Text style={styles.errorText}>{errors.items}</Text>
+            )}
 
             {formData.items.map((item: any, index: number) => (
               <View key={index} style={styles.itemCard}>
@@ -495,17 +516,22 @@ export default function SalesChallanFormScreen() {
                     </Text>
                   </View>
 
-                  <View style={[styles.quantityBox, { backgroundColor: '#DBEAFE' }]}>
+                  <View
+                    style={[styles.quantityBox, { backgroundColor: "#DBEAFE" }]}
+                  >
                     <Text style={styles.quantityLabel}>Prev. Dispatched</Text>
-                    <Text style={[styles.quantityValue, { color: '#1E40AF' }]}>
+                    <Text style={[styles.quantityValue, { color: "#1E40AF" }]}>
                       {item.previouslyDispatched || 0} {item.unit}
                     </Text>
                   </View>
 
-                  <View style={[styles.quantityBox, { backgroundColor: '#FEF3C7' }]}>
+                  <View
+                    style={[styles.quantityBox, { backgroundColor: "#FEF3C7" }]}
+                  >
                     <Text style={styles.quantityLabel}>Pending</Text>
-                    <Text style={[styles.quantityValue, { color: '#92400E' }]}>
-                      {item.orderedQuantity - (item.previouslyDispatched || 0)} {item.unit}
+                    <Text style={[styles.quantityValue, { color: "#92400E" }]}>
+                      {item.orderedQuantity - (item.previouslyDispatched || 0)}{" "}
+                      {item.unit}
                     </Text>
                   </View>
                 </View>
@@ -518,7 +544,7 @@ export default function SalesChallanFormScreen() {
                       style={[styles.input, styles.inputFlex]}
                       value={String(item.dispatchQuantity)}
                       onChangeText={(value) =>
-                        handleItemChange(index, 'dispatchQuantity', value)
+                        handleItemChange(index, "dispatchQuantity", value)
                       }
                       keyboardType="numeric"
                       placeholder="0"
@@ -539,7 +565,9 @@ export default function SalesChallanFormScreen() {
                   <TextInput
                     style={styles.input}
                     value={String(item.weight)}
-                    onChangeText={(value) => handleItemChange(index, 'weight', value)}
+                    onChangeText={(value) =>
+                      handleItemChange(index, "weight", value)
+                    }
                     keyboardType="numeric"
                     placeholder="0"
                     placeholderTextColor="#9CA3AF"
@@ -550,7 +578,11 @@ export default function SalesChallanFormScreen() {
                 <TouchableOpacity
                   style={styles.checkboxRow}
                   onPress={() =>
-                    handleItemChange(index, 'markAsComplete', !item.markAsComplete)
+                    handleItemChange(
+                      index,
+                      "markAsComplete",
+                      !item.markAsComplete,
+                    )
                   }
                 >
                   <View
@@ -584,12 +616,18 @@ export default function SalesChallanFormScreen() {
 
       {/* Submit Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => router.back()}
+        >
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[
+            styles.submitButton,
+            submitting && styles.submitButtonDisabled,
+          ]}
           onPress={handleSubmit}
           disabled={submitting || !selectedSO}
         >
@@ -597,11 +635,44 @@ export default function SalesChallanFormScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.submitButtonText}>
-              {isEditMode ? 'Update Challan' : 'Create Challan'}
+              {isEditMode ? "Update Challan" : "Create Challan"}
             </Text>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Sales Order Modal */}
+      <SearchableModal
+        visible={showSOModal}
+        onClose={() => setShowSOModal(false)}
+        title="Select Sales Order"
+        options={salesOrders}
+        selectedValue={formData.salesOrder}
+        onSelect={(value: string) => {
+          handleChange("salesOrder", value);
+          handleSOSelection(value);
+        }}
+        getLabel={(so: any) => so.soNumber}
+        getValue={(so: any) => so._id}
+        getSubtitle={(so: any) => `${so.customer?.companyName || "Unknown"} • ${so.status}`}
+        searchPlaceholder="Search by SO number or customer..."
+        emptyMessage="No sales orders available"
+        loading={loadingSOs}
+      />
+
+      {/* Warehouse Modal */}
+      <SearchableModal
+        visible={showWarehouseModal}
+        onClose={() => setShowWarehouseModal(false)}
+        title="Select Warehouse Location"
+        options={WAREHOUSE_LOCATIONS}
+        selectedValue={formData.warehouseLocation}
+        onSelect={(value: string) => handleChange("warehouseLocation", value)}
+        getLabel={(w: any) => w.name}
+        getValue={(w: any) => w.id}
+        searchPlaceholder="Search warehouses..."
+        emptyMessage="No warehouses found"
+      />
     </View>
   );
 }
@@ -609,53 +680,53 @@ export default function SalesChallanFormScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
   },
   centerContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingTop: 60,
     paddingBottom: 16,
     paddingHorizontal: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   backButton: {
     width: 40,
     height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
   },
   formContainer: {
     flex: 1,
   },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginTop: 12,
     padding: 20,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
     marginBottom: 16,
   },
   formGroup: {
@@ -663,33 +734,33 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
+    fontWeight: "500",
+    color: "#374151",
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#111827',
-    backgroundColor: '#fff',
+    color: "#111827",
+    backgroundColor: "#fff",
   },
   pickerContainer: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
+    overflow: "hidden",
+    backgroundColor: "#fff",
   },
   picker: {
     height: 50,
   },
   inputWithUnit: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   inputFlex: {
@@ -697,63 +768,63 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: "#6B7280",
+    fontWeight: "500",
   },
   errorText: {
     fontSize: 12,
-    color: '#EF4444',
+    color: "#EF4444",
     marginTop: 4,
   },
   itemCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
   },
   itemHeader: {
     marginBottom: 12,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   itemProductName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
     marginBottom: 4,
   },
   itemProductCode: {
     fontSize: 13,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   itemQuantities: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginBottom: 16,
   },
   quantityBox: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
     padding: 12,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   quantityLabel: {
     fontSize: 11,
-    color: '#6B7280',
+    color: "#6B7280",
     marginBottom: 4,
   },
   quantityValue: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
   },
   checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 12,
   },
   checkbox: {
@@ -761,70 +832,152 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#D1D5DB',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderColor: "#D1D5DB",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 8,
   },
   checkboxChecked: {
-    backgroundColor: '#8B5CF6',
-    borderColor: '#8B5CF6',
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
   },
   checkboxLabel: {
     fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
+    color: "#374151",
+    fontWeight: "500",
   },
   itemNotes: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     padding: 12,
     borderRadius: 8,
     marginTop: 12,
   },
   itemNotesLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#92400E',
+    fontWeight: "600",
+    color: "#92400E",
     marginBottom: 4,
   },
   itemNotesText: {
     fontSize: 13,
-    color: '#78350F',
+    color: "#78350F",
   },
   footer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: "#E5E7EB",
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
+    borderColor: "#D1D5DB",
+    alignItems: "center",
   },
   cancelButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: "600",
+    color: "#374151",
   },
   submitButton: {
     flex: 2,
     paddingVertical: 14,
     borderRadius: 8,
-    backgroundColor: '#8B5CF6',
-    alignItems: 'center',
+    backgroundColor: "#8B5CF6",
+    alignItems: "center",
   },
   submitButtonDisabled: {
     opacity: 0.5,
   },
   submitButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
+  },
+  // Modal Picker Styles
+  pickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    backgroundColor: "#fff",
+    minHeight: 48,
+  },
+  pickerButtonDisabled: {
+    backgroundColor: "#F3F4F6",
+  },
+  pickerButtonText: {
+    fontSize: 14,
+    color: "#111827",
+    flex: 1,
+  },
+  placeholderText: {
+    color: "#9CA3AF",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "70%",
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  optionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  selectedOption: {
+    backgroundColor: "#F3F4F6",
+  },
+  optionText: {
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: "500",
+  },
+  selectedOptionText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
+  optionSubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  emptyListText: {
+    textAlign: "center",
+    padding: SPACING.xl,
+    color: "#6B7280",
+    fontSize: 14,
   },
 });

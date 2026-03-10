@@ -345,6 +345,37 @@ export const handleAPIError = (error, defaultMessage = 'An error occurred') => {
   return defaultMessage;
 };
 
+// ============ UNIT API ============
+export const unitAPI = {
+  // Get all units
+  getAll: async () => {
+    return apiRequest('/units');
+  },
+
+  // Create new unit
+  create: async (unitData) => {
+    return apiRequest('/units', {
+      method: 'POST',
+      body: JSON.stringify(unitData),
+    });
+  },
+
+  // Update unit
+  update: async (id, unitData) => {
+    return apiRequest(`/units/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(unitData),
+    });
+  },
+
+  // Delete unit
+  delete: async (id) => {
+    return apiRequest(`/units/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 // Default export with all APIs
 const masterDataAPI = {
   stats: { get: getMasterDataStats },
@@ -352,6 +383,7 @@ const masterDataAPI = {
   suppliers: supplierAPI,
   categories: categoryAPI,
   products: productAPI,
+  units: unitAPI,
   utils: {
     getDropdownOptions,
     formatters,

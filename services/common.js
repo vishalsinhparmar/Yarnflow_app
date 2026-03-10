@@ -67,10 +67,22 @@ export const apiRequest = async (endpoint, options = {}) => {
     'Content-Type': 'application/json',
   };
 
+  // Attach auth token if available
+  let authHeaders = {};
+  try {
+    const token = await AsyncStorage.getItem('authToken');
+    if (token) {
+      authHeaders = { 'Authorization': `Bearer ${token}` };
+    }
+  } catch (e) {
+    // Silently fail if AsyncStorage is unavailable
+  }
+
   const config = {
     ...options,
     headers: {
       ...defaultHeaders,
+      ...authHeaders,
       ...(options.headers || {}),
     },
   };
@@ -87,21 +99,66 @@ export const apiRequest = async (endpoint, options = {}) => {
       console.log(`❌ HTTP Error: ${response.status} ${response.statusText}`);
       
       // Try to get error details from response body
-      let errorMessage = `HTTP error! status: ${response.status}`;
+      let errorMessage = '';
+      let errorData = null;
       try {
-        const errorData = await response.json();
+        errorData = await response.json();
         console.log(`❌ Error response:`, errorData);
-        if (errorData.message) {
+        
+        // Extract field-specific validation errors if available
+        if (errorData.errors && Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+          const fieldErrors = errorData.errors.map(e => e.msg || e.message).filter(Boolean);
+          errorMessage = fieldErrors.length > 0 ? fieldErrors.join('\n') : '';
+        }
+        if (!errorMessage && errorData.message) {
           errorMessage = errorData.message;
-        } else if (errorData.error) {
+        }
+        if (!errorMessage && errorData.error) {
           errorMessage = errorData.error;
         }
       } catch (e) {
-        // If response is not JSON, use status text
         console.log(`❌ Could not parse error response`);
       }
+
+      // Map HTTP status codes to user-friendly messages
+      if (!errorMessage) {
+        switch (response.status) {
+          case 400:
+            errorMessage = 'Invalid request. Please check your input and try again.';
+            break;
+          case 401:
+            errorMessage = 'Your session has expired. Please log in again.';
+            break;
+          case 403:
+            errorMessage = 'You do not have permission to perform this action.';
+            break;
+          case 404:
+            errorMessage = 'The requested item was not found.';
+            break;
+          case 409:
+            errorMessage = 'This item already exists or conflicts with existing data.';
+            break;
+          case 422:
+            errorMessage = 'Please check your input. Some fields have invalid values.';
+            break;
+          case 429:
+            errorMessage = 'Too many requests. Please wait a moment and try again.';
+            break;
+          case 500:
+          case 502:
+          case 503:
+            errorMessage = 'Server is temporarily unavailable. Please try again later.';
+            break;
+          default:
+            errorMessage = 'Something went wrong. Please try again.';
+            break;
+        }
+      }
       
-      throw new Error(errorMessage);
+      const error = new Error(errorMessage);
+      error.statusCode = response.status;
+      error.serverMessage = errorData?.message || '';
+      throw error;
     }
 
     const data = await response.json();
@@ -110,9 +167,26 @@ export const apiRequest = async (endpoint, options = {}) => {
 
   } catch (error) {
     console.log(`❌ Error details:`, error.message);
-    if (error.message.includes('Network request failed') || error.message.includes('Failed to fetch')) {
-      throw new Error(`Cannot connect to server. URL: ${url}. Check if backend is running and CORS is enabled.`);
+    
+    // Network / connection errors — user-friendly message
+    if (
+      error.message.includes('Network request failed') ||
+      error.message.includes('Failed to fetch') ||
+      error.message.includes('TypeError: Network') ||
+      error.message.includes('AbortError')
+    ) {
+      const networkError = new Error(
+        'Unable to connect to the server. Please check your internet connection and try again.'
+      );
+      networkError.isNetworkError = true;
+      throw networkError;
     }
+    
+    // Timeout errors
+    if (error.message.includes('timeout') || error.name === 'AbortError') {
+      throw new Error('The request timed out. Please check your connection and try again.');
+    }
+    
     throw error;
   }
 };
