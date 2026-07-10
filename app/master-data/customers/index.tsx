@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useToast } from '@/components/ui/Toast';
 import { customerAPI } from '../../../services/index.js';
 
 interface Customer {
@@ -29,6 +30,7 @@ interface Customer {
 
 export default function CustomersScreen() {
   const router = useRouter();
+  const toast = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -144,9 +146,9 @@ export default function CustomersScreen() {
             try {
               await customerAPI.delete(customerId);
               setCustomers(prev => prev.filter(c => c._id !== customerId));
-              Alert.alert('Success', 'Customer deleted successfully');
+              toast.showToast('success', 'Customer Deleted', 'Customer removed successfully');
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete customer');
+              toast.showToast('error', 'Delete Failed', err.message || 'Failed to delete customer');
             }
           },
         },

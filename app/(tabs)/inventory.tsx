@@ -1,6 +1,7 @@
 import CategorySection from '@/components/inventory/CategorySection';
 import SearchBar from '@/components/inventory/SearchBar';
 import StatsCard from '@/components/inventory/StatsCard';
+import ErrorState from '@/components/ui/ErrorState';
 import { ListSkeleton } from '@/components/ui/SkeletonLoader';
 import { BORDER_RADIUS, COLORS, SPACING } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,6 +77,8 @@ export default function InventoryScreen() {
                 lotCount: Number(product.lotCount || 0),
                 grnCount: Number(product.grnCount || 0),
                 supplierNames: String(product.supplierNames || ''),
+                hasSubProducts: Boolean(product.hasSubProducts || (product.subProductCount && product.subProductCount > 0)),
+                subProductCount: Number(product.subProductCount || 0),
                 suppliers: [],
                 lots: []
               };
@@ -183,6 +186,8 @@ export default function InventoryScreen() {
         lotCount: product.lotCount || 0,
         grnCount: product.grnCount || 0,
         supplierNames: product.supplierNames || '',
+        hasSubProducts: product.hasSubProducts ? '1' : '0',
+        subProductCount: String(product.subProductCount || 0),
         suppliers: JSON.stringify(product.suppliers || []),
         lots: JSON.stringify(product.lots || product.grns || []),
       }

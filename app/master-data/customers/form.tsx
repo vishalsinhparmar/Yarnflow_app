@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '@/components/ui/Toast';
 import { customerAPI } from '../../../services/index.js';
 
 interface CustomerFormData {
@@ -25,6 +26,7 @@ interface CustomerFormData {
 
 export default function CustomerFormScreen() {
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams();
   const isEditMode = params.mode === 'edit';
   const customerId = params.customerId as string;
@@ -57,7 +59,7 @@ export default function CustomerFormScreen() {
         });
       } catch (error) {
         console.error('Error parsing customer data:', error);
-        Alert.alert('Error', 'Failed to load customer data');
+        toast.showToast('error', 'Load Failed', 'Failed to load customer data');
         router.back();
       }
     }
@@ -76,7 +78,7 @@ export default function CustomerFormScreen() {
       setFormData(prev => ({
         ...prev,
         [parent]: {
-          ...prev[parent as keyof CustomerFormData],
+          ...(prev[parent as keyof CustomerFormData] as object),
           [child]: value,
         },
       }));
@@ -136,37 +138,15 @@ export default function CustomerFormScreen() {
       
       if (isEditMode) {
         await customerAPI.update(customerId, formData);
-        Alert.alert('Success', 'Customer updated successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              // Navigate back with refresh flag
-              router.back();
-              // Use router.replace to trigger a refresh
-              setTimeout(() => {
-                router.replace('/master-data/customers/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Customer Updated', 'Customer updated successfully');
+        setTimeout(() => router.back(), 800);
       } else {
         await customerAPI.create(formData);
-        Alert.alert('Success', 'Customer created successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              // Navigate back with refresh flag
-              router.back();
-              // Use router.replace to trigger a refresh
-              setTimeout(() => {
-                router.replace('/master-data/customers/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Customer Created', 'Customer created successfully');
+        setTimeout(() => router.back(), 800);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save customer');
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save customer');
     } finally {
       setLoading(false);
     }

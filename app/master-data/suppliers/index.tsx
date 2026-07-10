@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useToast } from '@/components/ui/Toast';
 import { supplierAPI } from '../../../services/index.js';
 
 interface Supplier {
@@ -29,6 +30,7 @@ interface Supplier {
 
 export default function SuppliersScreen() {
   const router = useRouter();
+  const toast = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -143,9 +145,9 @@ export default function SuppliersScreen() {
             try {
               await supplierAPI.delete(supplierId);
               setSuppliers(prev => prev.filter(s => s._id !== supplierId));
-              Alert.alert('Success', 'Supplier deleted successfully');
+              toast.showToast('success', 'Supplier Deleted', 'Supplier removed successfully');
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete supplier');
+              toast.showToast('error', 'Delete Failed', err.message || 'Failed to delete supplier');
             }
           },
         },

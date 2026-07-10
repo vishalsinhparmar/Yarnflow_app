@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SHADOWS, SPACING, BORDER_RADIUS } from '@/constants/colors';
+import { useWarehouseLocations } from '../../hooks/useWarehouseLocations';
 
 interface LotCardProps {
   lot: {
@@ -32,13 +33,15 @@ const formatSimpleDate = (dateStr: string | null | undefined): string => {
   }
 };
 
-// Simple warehouse name formatter
-const getSimpleWarehouseName = (code: string): string => {
-  if (!code) return 'Unknown';
-  return code.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-};
-
 function LotCard({ lot, productUnit }: LotCardProps) {
+  const { locations: warehouseLocations } = useWarehouseLocations();
+
+  const getWarehouseName = (idOrCode: string): string => {
+    if (!idOrCode) return 'Unknown';
+    const found = warehouseLocations.find((w: any) => w._id === idOrCode);
+    return found ? found.name : idOrCode;
+  };
+
   // Validate input
   if (!lot || typeof lot !== 'object') {
     return (
@@ -102,7 +105,7 @@ function LotCard({ lot, productUnit }: LotCardProps) {
         <View style={styles.detailItem}>
           <Text style={styles.detailLabel}>🏢 Warehouse: </Text>
           <Text style={styles.detailValue} numberOfLines={1}>
-            {getSimpleWarehouseName(warehouse)}
+            {getWarehouseName(warehouse)}
           </Text>
         </View>
 

@@ -345,6 +345,48 @@ export const handleAPIError = (error, defaultMessage = 'An error occurred') => {
   return defaultMessage;
 };
 
+// ============ SUB-PRODUCT API ============
+export const subProductAPI = {
+  // Get all sub-products for a product (matches web: subProductAPI.getAll(productId))
+  getAll: async (productId) => {
+    return baseRequest(`/master-data/products/${productId}/sub-products`);
+  },
+
+  // Alias kept for internal use
+  getByProduct: async (productId) => {
+    return baseRequest(`/master-data/products/${productId}/sub-products`);
+  },
+
+  // Bulk add sub-products to a product
+  bulkAdd: async (productId, names) => {
+    return baseRequest(`/master-data/products/${productId}/sub-products/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ names }),
+    });
+  },
+
+  // Update sub-product
+  update: async (id, data) => {
+    return baseRequest(`/master-data/sub-products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete sub-product
+  delete: async (id) => {
+    return baseRequest(`/master-data/sub-products/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ============ DISPLAY NAME HELPER ============
+export const getDisplayName = (productName, subProductName) => {
+  if (subProductName) return `${productName} X ${subProductName}`;
+  return productName || '-';
+};
+
 // ============ UNIT API ============
 export const unitAPI = {
   // Get all units
@@ -383,11 +425,13 @@ const masterDataAPI = {
   suppliers: supplierAPI,
   categories: categoryAPI,
   products: productAPI,
+  subProducts: subProductAPI,
   units: unitAPI,
   utils: {
     getDropdownOptions,
     formatters,
-    handleAPIError
+    handleAPIError,
+    getDisplayName
   }
 };
 

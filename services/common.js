@@ -1,7 +1,9 @@
 // Centralized API config and request helper for React Native
 // Automatically detects environment and uses correct API URL
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 import { Platform } from 'react-native';
 
 // Get environment variable from Expo config (ensure it's a string)
@@ -21,11 +23,12 @@ const isDevelopment = __DEV__;
 // 
 // HOTSPOT USERS: Use the IP your phone assigned to your laptop
 // Common ranges: 192.168.43.xxx (Android) or 172.20.10.xxx (iPhone)
-const PHYSICAL_DEVICE_IP = "192.168.205.1"; // Updated to match current network IP
-
+const PHYSICAL_DEVICE_IP = "192.168.31.148"; // Your laptop's hotspot IP (from ipconfig → Wi-Fi IPv4)
+//  192.168.31.147
+// 192.168.43.159
 // 🔧 IMPORTANT: Make sure this matches your backend server port!
 // Your backend is running on port 3050 (from .env file)
-const BACKEND_PORT = 3050; // Updated to match backend default port
+const BACKEND_PORT = 3050; // Confirmed: server is listening on port 3050
 
 // Set API URLs based on platform
 let DEVELOPMENT_API;
@@ -97,6 +100,16 @@ export const apiRequest = async (endpoint, options = {}) => {
     
     if (!response.ok) {
       console.log(`❌ HTTP Error: ${response.status} ${response.statusText}`);
+
+      // 401 — session expired or token invalid: clear storage and redirect to login
+      if (response.status === 401) {
+        await AsyncStorage.removeItem('authToken');
+        await AsyncStorage.removeItem('user');
+        try { router.replace('/login'); } catch (_) {}
+        const sessionError = new Error('Session expired. Please log in again.');
+        sessionError.statusCode = 401;
+        throw sessionError;
+      }
       
       // Try to get error details from response body
       let errorMessage = '';

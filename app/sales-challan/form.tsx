@@ -14,25 +14,69 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { WAREHOUSE_LOCATIONS } from "../../constants/warehouseLocations";
+import { useToast } from "@/components/ui/Toast";
+import { useWarehouseLocations } from "../../hooks/useWarehouseLocations";
 import { salesChallanAPI } from "../../services/salesChallanAPI";
 import { salesOrderAPI } from "../../services/salesOrderAPI";
 
+interface ChallanItem {
+  salesOrderItem: string;
+  product?: string;
+  productName: string;
+  subProduct?: string;
+  subProductName?: string;
+  productCode?: string;
+  orderedQuantity: number;
+  dispatchQuantity: number;
+  previouslyDispatched: number;
+  pendingQuantity: number;
+  unit: string;
+  weight: number;
+  weightPerUnit?: number;
+  subProductWeights?: number[];
+  markAsComplete?: boolean;
+  notes?: string;
+}
+
+interface ChallanFormData {
+  salesOrder: string | string[];
+  challanDate: string;
+  expectedDeliveryDate: string;
+  warehouseLocation: string;
+  notes: string;
+  items: ChallanItem[];
+}
+
+interface SalesOrder {
+  _id: string;
+  soNumber: string;
+  customer: any;
+  items: any[];
+  status: string;
+}
+
 export default function SalesChallanFormScreen() {
   const router = useRouter();
+  const toast = useToast();
   const { id, soId } = useLocalSearchParams();
   const isEditMode = !!id;
 
+  const { locations: warehouseLocations } = useWarehouseLocations();
+
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [salesOrders, setSalesOrders] = useState([]);
-  const [selectedSO, setSelectedSO] = useState(null);
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
+  const [soPage, setSoPage] = useState(1);
+  const [soHasMore, setSoHasMore] = useState(false);
+  const [soLoadingMore, setSoLoadingMore] = useState(false);
+  const [soSearch, setSoSearch] = useState('');
+  const [selectedSO, setSelectedSO] = useState<SalesOrder | null>(null);
   const [loadingSOs, setLoadingSOs] = useState(true);
   const [dispatchedQuantities, setDispatchedQuantities] = useState<{
     [key: string]: number;
   }>({});
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ChallanFormData>({
     salesOrder: soId || "",
     challanDate: new Date().toISOString().split("T")[0],
     expectedDeliveryDate: "",
@@ -41,7 +85,7 @@ export default function SalesChallanFormScreen() {
     items: [],
   });
 
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Modal states for custom pickers
   const [showSOModal, setShowSOModal] = useState(false);
@@ -62,33 +106,58 @@ export default function SalesChallanFormScreen() {
   // Handle pre-selected SO
   useEffect(() => {
     if (soId && !isEditMode) {
-      handleSOSelection(soId);
+      handleSOSelection(Array.isArray(soId) ? soId[0] : soId as string);
     }
   }, [soId]);
 
-  const loadSalesOrders = async () => {
+  const SC_PAGE_LIMIT = 50;
+
+  const loadSalesOrders = async (search = '', page = 1, append = false) => {
     try {
-      setLoadingSOs(true);
+      if (!append) setLoadingSOs(true);
+      else setSoLoadingMore(true);
       console.log("🔗 Loading sales orders...");
 
-      const response = await salesOrderAPI.getAll({ limit: 100 });
+      const params: any = { limit: SC_PAGE_LIMIT, page };
+      if (search) params.search = search;
+      const response = await salesOrderAPI.getAll(params);
       console.log("📦 SOs response:", response);
 
       if (response?.success && response?.data) {
         // Filter out fully delivered/cancelled SOs
         const incompleteSOs = response.data.filter(
-          (so) => so.status !== "Delivered" && so.status !== "Cancelled",
+          (so: SalesOrder) => so.status !== "Delivered" && so.status !== "Cancelled",
         );
-        setSalesOrders(incompleteSOs);
+        if (append) {
+          setSalesOrders(prev => [...prev, ...incompleteSOs]);
+        } else {
+          setSalesOrders(incompleteSOs);
+        }
+        const pagination = response.pagination;
+        const hasMore = pagination ? page < pagination.pages : response.data.length === SC_PAGE_LIMIT;
+        setSoHasMore(hasMore);
+        setSoPage(page);
+        setSoSearch(search);
         console.log(`✅ Loaded ${incompleteSOs.length} incomplete SOs`);
       } else {
-        setSalesOrders([]);
+        if (!append) setSalesOrders([]);
       }
     } catch (error) {
       console.error("❌ Error loading SOs:", error);
-      setSalesOrders([]);
+      if (!append) setSalesOrders([]);
     } finally {
       setLoadingSOs(false);
+      setSoLoadingMore(false);
+    }
+  };
+
+  const handleSOSearch = (query: string) => {
+    loadSalesOrders(query, 1, false);
+  };
+
+  const handleSOLoadMore = () => {
+    if (!soLoadingMore && soHasMore) {
+      loadSalesOrders(soSearch, soPage + 1, true);
     }
   };
 
@@ -132,7 +201,7 @@ export default function SalesChallanFormScreen() {
       }
     } catch (error) {
       console.error("❌ Error loading challan:", error);
-      Alert.alert("Error", "Failed to load challan details");
+      toast.showToast('error', 'Load Failed', 'Failed to load challan details');
     } finally {
       setLoading(false);
     }
@@ -193,6 +262,8 @@ export default function SalesChallanFormScreen() {
               salesOrderItem: item._id,
               product: item.product?._id,
               productName: item.product?.productName || item.productName,
+              subProduct: item.subProduct?._id || item.subProduct || '',
+              subProductName: item.subProductName || item.subProduct?.name || '',
               productCode: item.product?.productCode || item.productCode,
               orderedQuantity: item.quantity,
               dispatchQuantity: remaining,
@@ -201,6 +272,7 @@ export default function SalesChallanFormScreen() {
               unit: item.unit,
               weight: remainingWeight,
               weightPerUnit: weightPerUnit,
+              subProductWeights: Array.from({ length: remaining }, () => parseFloat((weightPerUnit).toFixed(3))),
               markAsComplete: false,
               notes: item.notes || "",
             };
@@ -219,7 +291,7 @@ export default function SalesChallanFormScreen() {
       }
     } catch (error) {
       console.error("❌ Error loading SO:", error);
-      Alert.alert("Error", "Failed to load SO details");
+      toast.showToast('error', 'Load Failed', 'Failed to load SO details');
     }
   };
 
@@ -248,9 +320,34 @@ export default function SalesChallanFormScreen() {
     if (field === "dispatchQuantity") {
       const item = updatedItems[index];
       const quantity = Number(value) || 0;
-      updatedItems[index].weight = quantity * (item.weightPerUnit || 0);
       updatedItems[index].pendingQuantity =
         item.orderedQuantity - item.previouslyDispatched - quantity;
+      if (item.subProduct) {
+        // Resize per-unit weights array and recalculate total
+        const current = Array.isArray(item.subProductWeights) ? item.subProductWeights : [];
+        const wpu = item.weightPerUnit || 0;
+        const next = Array.from({ length: quantity }, (_, i) =>
+          i < current.length ? current[i] : parseFloat(wpu.toFixed(3))
+        );
+        updatedItems[index].subProductWeights = next;
+        updatedItems[index].weight = next.reduce((s, w) => s + (Number(w) || 0), 0);
+      } else {
+        updatedItems[index].weight = quantity * (item.weightPerUnit || 0);
+      }
+    }
+
+    if (field === "subProductWeight") {
+      // value = { unitIdx, weight }
+      const { unitIdx, weight } = value as { unitIdx: number; weight: number };
+      const item = updatedItems[index];
+      const weights = [...(item.subProductWeights || [])];
+      weights[unitIdx] = weight;
+      updatedItems[index].subProductWeights = weights;
+      updatedItems[index].weight = weights.reduce((s, w) => s + (Number(w) || 0), 0);
+    }
+
+    if (field === "weight") {
+      updatedItems[index].weight = Number(value) || 0;
     }
 
     setFormData((prev) => ({
@@ -286,6 +383,13 @@ export default function SalesChallanFormScreen() {
           newErrors[`items.${index}.dispatchQuantity`] =
             `Cannot dispatch more than pending (${maxAllowed} ${item.unit})`;
         }
+
+        // Check if total weight exceeds the remaining weight for the SO item
+        const maxWeight = maxAllowed * (item.weightPerUnit || 0);
+        if (maxWeight > 0 && item.weight > maxWeight) {
+          newErrors[`items.${index}.weight`] =
+            `Weight exceeds pending ${maxWeight.toFixed(2)} kg`;
+        }
       }
     });
 
@@ -299,10 +403,7 @@ export default function SalesChallanFormScreen() {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert(
-        "Validation Error",
-        "Please fill all required fields correctly",
-      );
+      toast.showToast('warning', 'Validation Error', 'Please fill all required fields correctly');
       return;
     }
 
@@ -323,10 +424,15 @@ export default function SalesChallanFormScreen() {
             product: item.product,
             productName: item.productName,
             productCode: item.productCode,
+            subProduct: item.subProduct || undefined,
+            subProductName: item.subProductName || undefined,
             orderedQuantity: item.orderedQuantity,
             dispatchQuantity: Number(item.dispatchQuantity),
             unit: item.unit,
             weight: Number(item.weight),
+            subProductWeights: item.subProduct
+              ? (item.subProductWeights || []).filter((w: any) => Number(w) > 0)
+              : undefined,
             markAsComplete: item.markAsComplete || false,
             notes: item.notes || "",
           })),
@@ -342,22 +448,14 @@ export default function SalesChallanFormScreen() {
       console.log("✅ Challan response:", response);
 
       if (response?.success) {
-        Alert.alert(
-          "Success",
-          `Challan ${isEditMode ? "updated" : "created"} successfully!`,
-          [
-            {
-              text: "OK",
-              onPress: () => router.back(),
-            },
-          ],
-        );
+        toast.showToast('success', isEditMode ? 'Challan Updated' : 'Challan Created', `Challan ${isEditMode ? 'updated' : 'created'} successfully!`);
+        setTimeout(() => router.back(), 800);
       } else {
         throw new Error(response?.message || "Failed to save challan");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error submitting challan:", error);
-      Alert.alert("Error", error.message || "Failed to save challan");
+      toast.showToast('error', 'Save Failed', error?.message || 'Failed to save challan');
     } finally {
       setSubmitting(false);
     }
@@ -428,6 +526,7 @@ export default function SalesChallanFormScreen() {
           <View style={styles.formGroup}>
             <Text style={styles.label}>Challan Date *</Text>
             <DatePickerInput
+              label="Challan Date"
               value={formData.challanDate}
               onChange={(value) => handleChange("challanDate", value)}
               placeholder="Select challan date"
@@ -441,6 +540,7 @@ export default function SalesChallanFormScreen() {
           <View style={styles.formGroup}>
             <Text style={styles.label}>Expected Delivery Date</Text>
             <DatePickerInput
+              label="Expected Delivery Date"
               value={formData.expectedDeliveryDate}
               onChange={(value) => handleChange("expectedDeliveryDate", value)}
               placeholder="Select expected delivery date (Optional)"
@@ -466,8 +566,8 @@ export default function SalesChallanFormScreen() {
                 ]}
               >
                 {formData.warehouseLocation
-                  ? WAREHOUSE_LOCATIONS.find(
-                      (w) => w.id === formData.warehouseLocation,
+                  ? warehouseLocations.find(
+                      (w: any) => w._id === formData.warehouseLocation,
                     )?.name || "Select Warehouse"
                   : "Select Warehouse Location"}
               </Text>
@@ -499,11 +599,15 @@ export default function SalesChallanFormScreen() {
               <Text style={styles.errorText}>{errors.items}</Text>
             )}
 
-            {formData.items.map((item: any, index: number) => (
+            {formData.items.map((item: any, index: number) => {
+              const baseProductName = item.productName || 'Unknown';
+              const subName = item.subProductName || item.subProduct?.name;
+              const displayProductName = subName ? `${baseProductName} X ${subName}` : baseProductName;
+              return (
               <View key={index} style={styles.itemCard}>
                 {/* Product Info */}
                 <View style={styles.itemHeader}>
-                  <Text style={styles.itemProductName}>{item.productName}</Text>
+                  <Text style={styles.itemProductName}>{displayProductName}</Text>
                   <Text style={styles.itemProductCode}>{item.productCode}</Text>
                 </View>
 
@@ -559,20 +663,57 @@ export default function SalesChallanFormScreen() {
                   )}
                 </View>
 
-                {/* Weight */}
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Weight (kg)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={String(item.weight)}
-                    onChangeText={(value) =>
-                      handleItemChange(index, "weight", value)
-                    }
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                </View>
+                {/* Weight / Per-unit weights */}
+                {item.subProduct ? (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Sub-Product Weights (kg)</Text>
+                    <View style={styles.perUnitWeightsGrid}>
+                      {(item.subProductWeights || []).map((w, unitIdx) => (
+                        <View key={unitIdx} style={styles.perUnitWeightBox}>
+                          <Text style={styles.perUnitWeightLabel}>Unit {unitIdx + 1}</Text>
+                          <TextInput
+                            style={styles.perUnitWeightInput}
+                            value={String(w)}
+                            onChangeText={(value) =>
+                              handleItemChange(index, "subProductWeight", {
+                                unitIdx,
+                                weight: parseFloat(value) || 0,
+                              })
+                            }
+                            keyboardType="numeric"
+                            placeholder="0"
+                            placeholderTextColor="#9CA3AF"
+                          />
+                        </View>
+                      ))}
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 }}>
+                      <Text style={{ fontSize: 12, color: '#6B7280' }}>
+                        Total: <Text style={{ fontWeight: '600', color: '#111827' }}>{Number(item.weight || 0).toFixed(2)} kg</Text>
+                      </Text>
+                    </View>
+                    {errors[`items.${index}.weight`] && (
+                      <Text style={styles.errorText}>{errors[`items.${index}.weight`]}</Text>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Weight (kg)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={String(item.weight)}
+                      onChangeText={(value) =>
+                        handleItemChange(index, "weight", value)
+                      }
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {errors[`items.${index}.weight`] && (
+                      <Text style={styles.errorText}>{errors[`items.${index}.weight`]}</Text>
+                    )}
+                  </View>
+                )}
 
                 {/* Mark as Complete */}
                 <TouchableOpacity
@@ -606,7 +747,8 @@ export default function SalesChallanFormScreen() {
                   </View>
                 )}
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -647,7 +789,7 @@ export default function SalesChallanFormScreen() {
         onClose={() => setShowSOModal(false)}
         title="Select Sales Order"
         options={salesOrders}
-        selectedValue={formData.salesOrder}
+        selectedValue={Array.isArray(formData.salesOrder) ? formData.salesOrder[0] : formData.salesOrder as string}
         onSelect={(value: string) => {
           handleChange("salesOrder", value);
           handleSOSelection(value);
@@ -658,6 +800,10 @@ export default function SalesChallanFormScreen() {
         searchPlaceholder="Search by SO number or customer..."
         emptyMessage="No sales orders available"
         loading={loadingSOs}
+        onSearch={handleSOSearch}
+        onLoadMore={handleSOLoadMore}
+        loadingMore={soLoadingMore}
+        hasMore={soHasMore}
       />
 
       {/* Warehouse Modal */}
@@ -665,11 +811,11 @@ export default function SalesChallanFormScreen() {
         visible={showWarehouseModal}
         onClose={() => setShowWarehouseModal(false)}
         title="Select Warehouse Location"
-        options={WAREHOUSE_LOCATIONS}
+        options={warehouseLocations}
         selectedValue={formData.warehouseLocation}
         onSelect={(value: string) => handleChange("warehouseLocation", value)}
         getLabel={(w: any) => w.name}
-        getValue={(w: any) => w.id}
+        getValue={(w: any) => w._id}
         searchPlaceholder="Search warehouses..."
         emptyMessage="No warehouses found"
       />
@@ -861,6 +1007,35 @@ const styles = StyleSheet.create({
   itemNotesText: {
     fontSize: 13,
     color: "#78350F",
+  },
+  perUnitWeightsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  perUnitWeightBox: {
+    width: '31%',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  perUnitWeightLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  perUnitWeightInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 14,
+    color: '#111827',
+    backgroundColor: '#fff',
+    textAlign: 'center',
   },
   footer: {
     flexDirection: "row",

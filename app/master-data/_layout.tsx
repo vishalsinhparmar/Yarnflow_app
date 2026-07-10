@@ -80,6 +80,15 @@ export default function MasterDataLayout() {
           headerBackTitle: 'Cancel'
         }}
       />
+
+      {/* Sub-Products Routes */}
+      <Stack.Screen 
+        name="sub-products/index" 
+        options={{ 
+          title: 'Sub-Products',
+          headerBackTitle: 'Back'
+        }}
+      />
     </Stack>
   );
 }

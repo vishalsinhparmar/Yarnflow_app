@@ -1,10 +1,10 @@
 import { COLORS, SPACING } from "@/constants/colors";
+import { useToast } from "@/components/ui/Toast";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
@@ -46,9 +46,12 @@ interface POItem {
     _id: string;
     productName: string;
   };
+  subProduct?: { _id: string; name: string };
+  subProductName?: string;
   quantity: number;
   unit: string;
   weight: number;
+  perUnitWeights?: number[];
   receivedQuantity?: number;
   receivedWeight?: number;
   pendingQuantity?: number;
@@ -60,6 +63,7 @@ interface POItem {
 export default function PurchaseOrderDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const toast = useToast();
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(
     null,
@@ -79,12 +83,12 @@ export default function PurchaseOrderDetail() {
       if (response?.success) {
         setPurchaseOrder(response.data);
       } else {
-        Alert.alert("Error", "Purchase order not found");
+        toast.showToast('error', 'Not Found', 'Purchase order not found');
         router.back();
       }
     } catch (err: any) {
       console.error("Error loading PO:", err);
-      Alert.alert("Error", err.message || "Failed to load purchase order");
+      toast.showToast('error', 'Load Failed', err.message || 'Failed to load purchase order');
       router.back();
     } finally {
       setLoading(false);
@@ -262,7 +266,7 @@ export default function PurchaseOrderDetail() {
                 </View>
                 <Text style={styles.infoValue} numberOfLines={1}>
                   {purchaseOrder.supplier?.companyName ||
-                    purchaseOrder.supplier ||
+                    (typeof purchaseOrder.supplier === 'string' ? purchaseOrder.supplier : null) ||
                     "N/A"}
                 </Text>
               </View>
@@ -277,7 +281,7 @@ export default function PurchaseOrderDetail() {
                 </View>
                 <Text style={styles.infoValue}>
                   {purchaseOrder.category?.categoryName ||
-                    purchaseOrder.category ||
+                    (typeof purchaseOrder.category === 'string' ? purchaseOrder.category : null) ||
                     "N/A"}
                 </Text>
               </View>
@@ -341,8 +345,10 @@ export default function PurchaseOrderDetail() {
             </View>
 
             {purchaseOrder.items?.map((item, index) => {
-              const productName =
-                item.product?.productName || item.product || "Unknown";
+              const baseProductName =
+                item.product?.productName || (typeof item.product === 'string' ? item.product : 'Unknown');
+              const subName = item.subProductName || item.subProduct?.name;
+              const productName = subName ? `${baseProductName} X ${subName}` : baseProductName;
               const receivedQty = item.receivedQuantity || 0;
               const completion =
                 item.quantity > 0
@@ -371,6 +377,15 @@ export default function PurchaseOrderDetail() {
                       <Text style={[styles.receivedText, { color: "#10B981" }]}>
                         ✓ Manually Completed
                       </Text>
+                    )}
+                    {item.perUnitWeights && item.perUnitWeights.length > 0 && (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {item.perUnitWeights.map((w, wi) => (
+                          <View key={wi} style={{ backgroundColor: '#D1FAE5', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                            <Text style={{ fontSize: 10, color: '#065F46', fontWeight: '600' }}>#{wi+1}: {w.toFixed(1)}kg</Text>
+                          </View>
+                        ))}
+                      </View>
                     )}
                   </View>
 

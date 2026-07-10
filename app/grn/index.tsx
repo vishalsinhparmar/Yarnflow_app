@@ -14,6 +14,7 @@ import {
     View,
 } from "react-native";
 import Pagination from "../../components/Pagination";
+import { useWarehouseLocations } from "../../hooks/useWarehouseLocations";
 import { grnAPI } from "../../services/grnAPI";
 
 interface GRNListItem {
@@ -47,6 +48,13 @@ interface GRNStats {
 export default function GRNListScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { locations: warehouseLocations } = useWarehouseLocations();
+
+  const getWarehouseName = (idOrName: string) => {
+    if (!idOrName) return '';
+    const found = warehouseLocations.find((w: any) => w._id === idOrName);
+    return found ? found.name : idOrName;
+  };
 
   const [grns, setGrns] = useState<GRNListItem[]>([]);
   const [stats, setStats] = useState<GRNStats>({
@@ -506,7 +514,7 @@ export default function GRNListScreen() {
                     <Ionicons name="location" size={16} color="#6B7280" />
                     <Text style={styles.grnCardLabel}>Location:</Text>
                     <Text style={styles.grnCardValue} numberOfLines={1}>
-                      {grn.warehouseLocation}
+                      {getWarehouseName(grn.warehouseLocation)}
                     </Text>
                   </View>
                 )}

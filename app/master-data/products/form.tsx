@@ -9,9 +9,11 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '@/components/ui/Toast';
 import { productAPI, categoryAPI } from '../../../services/index.js';
+import { subProductAPI } from '../../../services/masterDataAPI';
 
 interface ProductFormData {
   productName: string;
@@ -22,10 +24,17 @@ interface ProductFormData {
 interface Category {
   _id: string;
   categoryName: string;
+  hasSubProducts?: boolean;
+}
+
+interface SubProduct {
+  _id: string;
+  name: string;
 }
 
 export default function ProductFormScreen() {
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams();
   const isEditMode = params.mode === 'edit';
   const productId = params.productId as string;
@@ -41,6 +50,13 @@ export default function ProductFormScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
+  // Sub-product state
+  const [subProducts, setSubProducts] = useState<SubProduct[]>([]);
+  const [newSubProductName, setNewSubProductName] = useState('');
+  const [addingSubProduct, setAddingSubProduct] = useState(false);
+  const [categoryHasSubProducts, setCategoryHasSubProducts] = useState(false);
+  const [savedProductId, setSavedProductId] = useState<string | null>(isEditMode ? productId : null);
+
   useEffect(() => {
     loadCategories();
     
@@ -52,9 +68,14 @@ export default function ProductFormScreen() {
           category: productData.category?._id || '',
           description: productData.description || '',
         });
+        const catHasSub = productData.category?.hasSubProducts || false;
+        setCategoryHasSubProducts(catHasSub);
+        if (catHasSub && productId) {
+          loadSubProducts(productId);
+        }
       } catch (error) {
         console.error('Error parsing product data:', error);
-        Alert.alert('Error', 'Failed to load product data');
+        toast.showToast('error', 'Load Failed', 'Failed to load product data');
         router.back();
       }
     }
@@ -72,6 +93,66 @@ export default function ProductFormScreen() {
     } finally {
       setLoadingCategories(false);
     }
+  };
+
+  const loadSubProducts = async (pid: string) => {
+    try {
+      const response = await subProductAPI.getByProduct(pid);
+      if (response && response.success && Array.isArray(response.data)) {
+        setSubProducts(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading sub-products:', error);
+    }
+  };
+
+  const handleCategorySelect = (categoryId: string) => {
+    handleChange('category', categoryId);
+    const selected = categories.find(c => c._id === categoryId);
+    setCategoryHasSubProducts(selected?.hasSubProducts || false);
+    if (!selected?.hasSubProducts) {
+      setSubProducts([]);
+    }
+  };
+
+  const handleAddSubProduct = async () => {
+    const name = newSubProductName.trim();
+    if (!name) return;
+    if (!savedProductId) {
+      toast.showToast('info', 'Save First', 'Please save the product before adding sub-products.');
+      return;
+    }
+    setAddingSubProduct(true);
+    try {
+      const response = await subProductAPI.bulkAdd(savedProductId, [name]);
+      if (response && response.success) {
+        setNewSubProductName('');
+        await loadSubProducts(savedProductId);
+      }
+    } catch (err: any) {
+      toast.showToast('error', 'Error', err.message || 'Failed to add sub-product');
+    } finally {
+      setAddingSubProduct(false);
+    }
+  };
+
+  const handleDeleteSubProduct = (subProduct: SubProduct) => {
+    Alert.alert('Delete Sub-Product', `Delete "${subProduct.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await subProductAPI.delete(subProduct._id);
+            setSubProducts(prev => prev.filter(sp => sp._id !== subProduct._id));
+            toast.showToast('success', 'Deleted', `"${subProduct.name}" removed`);
+          } catch (err: any) {
+            toast.showToast('error', 'Error', err.message || 'Failed to delete sub-product');
+          }
+        },
+      },
+    ]);
   };
 
   const handleChange = (field: string, value: string) => {
@@ -117,33 +198,17 @@ export default function ProductFormScreen() {
       
       if (isEditMode) {
         await productAPI.update(productId, cleanFormData);
-        Alert.alert('Success', 'Product updated successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/products/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Product Updated', 'Product updated successfully');
+        setTimeout(() => router.back(), 800);
       } else {
-        await productAPI.create(cleanFormData);
-        Alert.alert('Success', 'Product created successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/products/');
-              }, 100);
-            }
-          }
-        ]);
+        const created = await productAPI.create(cleanFormData);
+        const newId = created?.data?._id;
+        if (newId) setSavedProductId(newId);
+        toast.showToast('success', 'Product Created', 'Product created successfully');
+        setTimeout(() => router.back(), 800);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save product');
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save product');
     } finally {
       setLoading(false);
     }
@@ -200,7 +265,7 @@ export default function ProductFormScreen() {
                     styles.categoryOption,
                     !formData.category && styles.categoryOptionSelected,
                   ]}
-                  onPress={() => handleChange('category', '')}
+                  onPress={() => handleCategorySelect('')}
                 >
                   <Text
                     style={[
@@ -218,7 +283,7 @@ export default function ProductFormScreen() {
                       styles.categoryOption,
                       formData.category === category._id && styles.categoryOptionSelected,
                     ]}
-                    onPress={() => handleChange('category', category._id)}
+                    onPress={() => handleCategorySelect(category._id)}
                   >
                     <Text
                       style={[
@@ -227,12 +292,71 @@ export default function ProductFormScreen() {
                       ]}
                     >
                       {category.categoryName}
+                      {category.hasSubProducts && (
+                        <Text style={styles.subProductBadgeText}> · SP</Text>
+                      )}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
           </View>
+
+          {/* Sub-Products Section (shown only when category hasSubProducts and product saved) */}
+          {categoryHasSubProducts && (
+            <View style={styles.inputGroup}>
+              <View style={styles.subProductHeader}>
+                <Text style={styles.label}>Sub-Products</Text>
+                <Text style={styles.subProductCount}>{subProducts.length} added</Text>
+              </View>
+
+              {/* Existing sub-product chips */}
+              {subProducts.length > 0 && (
+                <View style={styles.chipsContainer}>
+                  {subProducts.map((sp) => (
+                    <View key={sp._id} style={styles.chip}>
+                      <Text style={styles.chipText}>{sp.name}</Text>
+                      <TouchableOpacity onPress={() => handleDeleteSubProduct(sp)} style={styles.chipDelete}>
+                        <Ionicons name="close-circle" size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Add sub-product input */}
+              {savedProductId ? (
+                <View style={styles.addSubProductRow}>
+                  <TextInput
+                    style={styles.subProductInput}
+                    value={newSubProductName}
+                    onChangeText={setNewSubProductName}
+                    placeholder="e.g., 23 or 9"
+                    placeholderTextColor="#9CA3AF"
+                    onSubmitEditing={handleAddSubProduct}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.addSubProductBtn, addingSubProduct && styles.addSubProductBtnDisabled]}
+                    onPress={handleAddSubProduct}
+                    disabled={addingSubProduct}
+                  >
+                    {addingSubProduct ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="add" size={20} color="#FFFFFF" />
+                    )}
+                    <Text style={styles.addSubProductBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.saveFirstHint}>
+                  <Ionicons name="information-circle" size={16} color="#6B7280" />
+                  <Text style={styles.saveFirstText}>Save the product first, then add sub-products here</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Description */}
           <View style={styles.inputGroup}>
@@ -385,6 +509,96 @@ const styles = StyleSheet.create({
   },
   categoryOptionTextSelected: {
     color: '#10B981',
+  },
+  subProductBadgeText: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  subProductHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  subProductCount: {
+    fontSize: 13,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#10B981',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingLeft: 12,
+    paddingRight: 6,
+    gap: 4,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  chipDelete: {
+    padding: 2,
+  },
+  addSubProductRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  subProductInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111827',
+  },
+  addSubProductBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 4,
+  },
+  addSubProductBtnDisabled: {
+    opacity: 0.6,
+  },
+  addSubProductBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  saveFirstHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+  },
+  saveFirstText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
   },
   footer: {
     flexDirection: 'row',

@@ -44,19 +44,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
 
-          // Optionally verify token with backend
+          // Verify token with backend
           try {
             const response = await authAPI.verifyToken();
             if (!response.success) {
-              // Token invalid, clear auth
+              // Token invalid or account disabled — clear auth
               await AsyncStorage.removeItem('authToken');
               await AsyncStorage.removeItem('user');
               setToken(null);
               setUser(null);
             }
-          } catch {
-            // Verification failed but keep local auth (offline support)
-            console.log('Token verification failed, using cached auth');
+          } catch (err: any) {
+            const code = err?.statusCode;
+            if (code === 401 || code === 403) {
+              // Expired/invalid token or disabled account — force logout
+              await AsyncStorage.removeItem('authToken');
+              await AsyncStorage.removeItem('user');
+              setToken(null);
+              setUser(null);
+            } else {
+              // Network error or server down — keep cached auth for offline support
+              console.log('Token verification failed (network?), using cached auth');
+            }
           }
         }
       } catch (error) {

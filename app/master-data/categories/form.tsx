@@ -8,18 +8,22 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '@/components/ui/Toast';
 import { categoryAPI } from '../../../services/index.js';
 
 interface CategoryFormData {
   categoryName: string;
   description: string;
+  hasSubProducts: boolean;
 }
 
 export default function CategoryFormScreen() {
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams();
   const isEditMode = params.mode === 'edit';
   const categoryId = params.categoryId as string;
@@ -27,6 +31,7 @@ export default function CategoryFormScreen() {
   const [formData, setFormData] = useState<CategoryFormData>({
     categoryName: '',
     description: '',
+    hasSubProducts: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,10 +44,11 @@ export default function CategoryFormScreen() {
         setFormData({
           categoryName: categoryData.categoryName || '',
           description: categoryData.description || '',
+          hasSubProducts: categoryData.hasSubProducts || false,
         });
       } catch (error) {
         console.error('Error parsing category data:', error);
-        Alert.alert('Error', 'Failed to load category data');
+        toast.showToast('error', 'Load Failed', 'Failed to load category data');
         router.back();
       }
     }
@@ -85,38 +91,21 @@ export default function CategoryFormScreen() {
       // Ensure we only send the fields we want (exclude any legacy fields)
       const cleanFormData = {
         categoryName: formData.categoryName.trim(),
-        description: formData.description.trim()
+        description: formData.description.trim(),
+        hasSubProducts: formData.hasSubProducts,
       };
       
       if (isEditMode) {
         await categoryAPI.update(categoryId, cleanFormData);
-        Alert.alert('Success', 'Category updated successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/categories/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Category Updated', 'Category updated successfully');
+        setTimeout(() => router.back(), 800);
       } else {
         await categoryAPI.create(cleanFormData);
-        Alert.alert('Success', 'Category created successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/categories/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Category Created', 'Category created successfully');
+        setTimeout(() => router.back(), 800);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save category');
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save category');
     } finally {
       setLoading(false);
     }
@@ -157,6 +146,20 @@ export default function CategoryFormScreen() {
             )}
           </View>
 
+
+          {/* Has Sub-Products Toggle */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.label}>Has Sub-Products</Text>
+              <Text style={styles.toggleHint}>Enable to manage sub-products (e.g., count variants) under this category</Text>
+            </View>
+            <Switch
+              value={formData.hasSubProducts}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, hasSubProducts: value }))}
+              trackColor={{ false: '#D1D5DB', true: '#A7F3D0' }}
+              thumbColor={formData.hasSubProducts ? '#10B981' : '#F9FAFB'}
+            />
+          </View>
 
           {/* Description */}
           <View style={styles.inputGroup}>
@@ -261,6 +264,27 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  toggleRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 20,
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+    lineHeight: 16,
   },
   helperText: {
     fontSize: 12,

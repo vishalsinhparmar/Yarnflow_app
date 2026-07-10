@@ -1,4 +1,5 @@
 // Sales Challan (Delivery) API Service for YarnFlow Mobile
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { API_BASE_URL, apiRequest as baseRequest } from "./common.js";
@@ -105,12 +106,15 @@ export const salesChallanAPI = {
     try {
       console.log("📥 Downloading PDF for challan:", id);
 
-      const pdfUrl = `${API_BASE_URL}/sales-challans/${id}/pdf`;
+      const token = await AsyncStorage.getItem("authToken");
+      const pdfUrl = `${API_BASE_URL}/sales-challans/${id}/pdf/download`;
       const filename = `Sales_Challan_${challanNumber}.pdf`;
       const fileUri = FileSystem.documentDirectory + filename;
 
-      // Download the PDF file
-      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri);
+      // Download the PDF file with auth token
+      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       if (downloadResult.status !== 200) {
         throw new Error("Failed to download PDF");
@@ -148,12 +152,15 @@ export const salesChallanAPI = {
     try {
       console.log("📥 Downloading consolidated PDF for SO:", soId);
 
-      const pdfUrl = `${API_BASE_URL}/sales-challans/so/${soId}/consolidated-pdf`;
+      const token = await AsyncStorage.getItem("authToken");
+      const pdfUrl = `${API_BASE_URL}/sales-challans/so/${soId}/pdf/download`;
       const filename = `SO_${soNumber}_Consolidated.pdf`;
       const fileUri = FileSystem.documentDirectory + filename;
 
-      // Download the PDF file
-      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri);
+      // Download the PDF file with auth token
+      const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
       if (downloadResult.status !== 200) {
         throw new Error("Failed to download consolidated PDF");

@@ -335,6 +335,22 @@ export default function PurchaseOrdersScreen() {
 
           {item.status !== "Cancelled" &&
             item.status !== "Fully_Received" &&
+            item.status !== "Draft" && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() =>
+                  router.push(`/grn/form?poId=${item._id}` as any)
+                }
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#8B5CF6" />
+                <Text style={[styles.actionButtonText, { color: "#8B5CF6" }]}>
+                  GRN
+                </Text>
+              </TouchableOpacity>
+            )}
+
+          {item.status !== "Cancelled" &&
+            item.status !== "Fully_Received" &&
             item.status !== "Closed" && (
               <TouchableOpacity
                 style={styles.actionButton}

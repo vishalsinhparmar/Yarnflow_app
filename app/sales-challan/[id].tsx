@@ -1,5 +1,6 @@
 import { useToast } from "@/components/ui/Toast";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -11,12 +12,19 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { getWarehouseName } from "../../constants/warehouseLocations";
+import { useWarehouseLocations } from "../../hooks/useWarehouseLocations";
 import { salesChallanAPI } from "../../services/salesChallanAPI";
 
 export default function SalesChallanDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { locations: warehouseLocations } = useWarehouseLocations();
+
+  const getWarehouseName = (idOrName: string) => {
+    if (!idOrName) return 'N/A';
+    const found = warehouseLocations.find((w: any) => w._id === idOrName);
+    return found ? found.name : idOrName;
+  };
 
   const [challan, setChallan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -61,16 +69,13 @@ export default function SalesChallanDetailScreen() {
         challan?.challanNumber,
       );
       if (result.success) {
-        // PDF will be shared/opened automatically by the API
+        toast.showToast('success', 'PDF Ready', 'PDF has been prepared for sharing');
       } else {
-        Alert.alert("Info", result.message || "PDF downloaded");
+        toast.showToast('info', 'PDF', result.message || 'PDF downloaded');
       }
     } catch (error: any) {
       console.error("❌ Error downloading PDF:", error);
-      Alert.alert(
-        "Error",
-        error.message || "Failed to download PDF. Please try again.",
-      );
+      toast.showToast('error', 'PDF Failed', error.message || 'Failed to download PDF. Please try again.');
     } finally {
       setDownloading(false);
     }
@@ -183,71 +188,77 @@ export default function SalesChallanDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header - Matching PO Detail Style */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
+      {/* Gradient Header */}
+      <LinearGradient
+        colors={["#7C3AED", "#6D28D9"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Sales Challan</Text>
-          <Text style={styles.headerSubtitle}>{challan.challanNumber}</Text>
-        </View>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(challanStatus) },
-          ]}
-        >
-          <Text style={styles.statusText}>{challanStatus}</Text>
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Completion Progress */}
-        {completionPercentage > 0 && (
-          <View style={styles.section}>
-            <View style={styles.progressSection}>
-              <View style={styles.progressHeader}>
-                <Text style={styles.progressLabel}>Dispatch Completion</Text>
-                <Text style={styles.progressPercentage}>
-                  {completionPercentage}%
-                </Text>
-              </View>
-              <View style={styles.progressBarContainer}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${completionPercentage}%`,
-                      backgroundColor:
-                        completionPercentage === 100 ? "#10B981" : "#8B5CF6",
-                    },
-                  ]}
-                />
-              </View>
-              <View style={styles.progressStats}>
-                <View style={styles.progressStat}>
-                  <Text style={styles.progressStatLabel}>Dispatched</Text>
-                  <Text style={styles.progressStatValue}>
-                    {totalDispatchedQty} / {totalOrderedQty}
-                  </Text>
-                </View>
-                <View style={styles.progressStat}>
-                  <Text style={styles.progressStatLabel}>Weight</Text>
-                  <Text style={styles.progressStatValue}>
-                    {totalWeight.toFixed(2)} kg
-                  </Text>
-                </View>
-              </View>
+          <View style={styles.headerIconRow}>
+            <View style={styles.headerIconBox}>
+              <Ionicons name="document-text" size={20} color="#FFF" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>{challan.challanNumber}</Text>
+              <Text style={styles.headerSubtitle}>
+                {challan.challanDate
+                  ? new Date(challan.challanDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Sales Challan'}
+              </Text>
             </View>
           </View>
-        )}
+        </View>
+        <View style={styles.headerActions}>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(challanStatus) }]}>
+            <Text style={styles.statusText}>{challanStatus}</Text>
+          </View>
+          {challanStatus !== 'Delivered' && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => router.push(`/sales-challan/form?id=${challan._id}` as any)}
+            >
+              <Ionicons name="pencil" size={18} color="#FFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </LinearGradient>
+
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Summary stats + completion */}
+        <View style={styles.section}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>DISPATCHED</Text>
+              <Text style={[styles.summaryValue, { color: '#10B981' }]}>{totalDispatchedQty}</Text>
+              <Text style={styles.summaryUnit}>of {totalOrderedQty}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>WEIGHT</Text>
+              <Text style={[styles.summaryValue, { color: '#8B5CF6' }]}>{totalWeight.toFixed(2)}</Text>
+              <Text style={styles.summaryUnit}>Kg</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>COMPLETION</Text>
+              <Text style={[styles.summaryValue, { color: completionPercentage === 100 ? '#10B981' : '#F59E0B' }]}>
+                {completionPercentage}%
+              </Text>
+              <Text style={styles.summaryUnit}>overall</Text>
+            </View>
+          </View>
+          {completionPercentage > 0 && (
+            <View style={styles.progressBarContainer}>
+              <View style={[styles.progressBarFill, {
+                width: `${completionPercentage}%` as any,
+                backgroundColor: completionPercentage === 100 ? '#10B981' : '#8B5CF6',
+              }]} />
+            </View>
+          )}
+        </View>
 
         {/* Challan Information */}
         <View style={styles.section}>
@@ -373,12 +384,15 @@ export default function SalesChallanDetailScreen() {
             {challan.items?.map((item: any, index: number) => {
               const itemStatus = getItemStatus(item);
               const dispatchedQty = item.dispatchQuantity || 0;
+              const baseProductName = item.productName || "Unknown";
+              const subName = item.subProductName || item.subProduct?.name;
+              const displayName = subName ? `${baseProductName} X ${subName}` : baseProductName;
 
               return (
                 <View key={item._id || index} style={styles.tableRow}>
                   <View style={{ flex: 2 }}>
                     <Text style={styles.productName}>
-                      {item.productName || "Unknown"}
+                      {displayName}
                     </Text>
                     {item.productCode && (
                       <Text style={styles.productCode}>{item.productCode}</Text>
@@ -490,29 +504,19 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "#8B5CF6",
-    paddingTop: 48,
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    gap: 12,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-    marginHorizontal: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#FFF",
-    letterSpacing: 1,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "#E9D5FF",
-    marginTop: 4,
-    fontWeight: "500",
-  },
+  headerIconRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerIconBox: { width: 40, height: 40, backgroundColor: "rgba(0,0,0,0.2)", borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  headerCenter: { flex: 1 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerTitle: { fontSize: 18, fontWeight: "bold", color: "#FFF" },
+  headerSubtitle: { fontSize: 12, color: "#DDD6FE", marginTop: 2 },
+  editButton: { width: 36, height: 36, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, justifyContent: "center", alignItems: "center" },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -525,6 +529,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFF",
   },
+  // Summary stats
+  summaryRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  summaryCard: { flex: 1, backgroundColor: "#F9FAFB", borderRadius: 10, padding: 12, alignItems: "center", borderWidth: 1, borderColor: "#E5E7EB" },
+  summaryLabel: { fontSize: 10, color: "#6B7280", fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
+  summaryValue: { fontSize: 20, fontWeight: "800" },
+  summaryUnit: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
   scrollView: { flex: 1 },
   section: {
     backgroundColor: "#FFF",
@@ -542,24 +552,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#111827",
     marginBottom: 16,
-  },
-  // Progress Section
-  progressSection: {},
-  progressHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  progressLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  progressPercentage: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#8B5CF6",
   },
   progressBarContainer: {
     height: 8,

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '@/components/ui/Toast';
 import { supplierAPI } from '../../../services/index.js';
 
 interface SupplierFormData {
@@ -25,6 +26,7 @@ interface SupplierFormData {
 
 export default function SupplierFormScreen() {
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams();
   const isEditMode = params.mode === 'edit';
   const supplierId = params.supplierId as string;
@@ -57,7 +59,7 @@ export default function SupplierFormScreen() {
         });
       } catch (error) {
         console.error('Error parsing supplier data:', error);
-        Alert.alert('Error', 'Failed to load supplier data');
+        toast.showToast('error', 'Load Failed', 'Failed to load supplier data');
         router.back();
       }
     }
@@ -76,7 +78,7 @@ export default function SupplierFormScreen() {
       setFormData(prev => ({
         ...prev,
         [parent]: {
-          ...prev[parent as keyof SupplierFormData],
+          ...(prev[parent as keyof SupplierFormData] as object),
           [child]: value,
         },
       }));
@@ -136,33 +138,15 @@ export default function SupplierFormScreen() {
       
       if (isEditMode) {
         await supplierAPI.update(supplierId, formData);
-        Alert.alert('Success', 'Supplier updated successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/suppliers/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Supplier Updated', 'Supplier updated successfully');
+        setTimeout(() => router.back(), 800);
       } else {
         await supplierAPI.create(formData);
-        Alert.alert('Success', 'Supplier created successfully', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              router.back();
-              setTimeout(() => {
-                router.replace('/master-data/suppliers/');
-              }, 100);
-            }
-          }
-        ]);
+        toast.showToast('success', 'Supplier Created', 'Supplier created successfully');
+        setTimeout(() => router.back(), 800);
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save supplier');
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save supplier');
     } finally {
       setLoading(false);
     }

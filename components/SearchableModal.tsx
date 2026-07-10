@@ -27,6 +27,9 @@ interface SearchableModalProps {
   emptyMessage?: string;
   loading?: boolean;
   onSearch?: (query: string) => void;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
 }
 
 export default function SearchableModal({
@@ -44,6 +47,9 @@ export default function SearchableModal({
   emptyMessage = 'No options found',
   loading = false,
   onSearch,
+  onLoadMore,
+  loadingMore = false,
+  hasMore = false,
 }: SearchableModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -125,6 +131,21 @@ export default function SearchableModal({
     );
   };
 
+  const renderListFooter = () => {
+    if (!hasMore && !loadingMore) return null;
+    return (
+      <View style={styles.loadMoreContainer}>
+        {loadingMore ? (
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        ) : (
+          <TouchableOpacity onPress={onLoadMore} style={styles.loadMoreButton}>
+            <Text style={styles.loadMoreText}>Load more...</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   return (
     <Modal
       visible={visible}
@@ -184,10 +205,16 @@ export default function SearchableModal({
           <FlatList
             data={filteredOptions}
             renderItem={renderItem}
-            keyExtractor={(item) => getValue(item)}
+            keyExtractor={(item, index) => {
+              const v = getValue(item);
+              return v ? `${v}-${index}` : `item-${index}`;
+            }}
             ListEmptyComponent={renderEmpty}
+            ListFooterComponent={renderListFooter}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            onEndReached={hasMore && !loadingMore ? onLoadMore : undefined}
+            onEndReachedThreshold={0.3}
             contentContainerStyle={
               filteredOptions.length === 0 ? styles.emptyListContent : undefined
             }
@@ -200,6 +227,7 @@ export default function SearchableModal({
                 {filteredOptions.length}{' '}
                 {filteredOptions.length === 1 ? 'result' : 'results'}
                 {searchTerm ? ` for "${searchTerm}"` : ''}
+                {hasMore ? ' (scroll for more)' : ''}
               </Text>
             </View>
           )}
@@ -331,5 +359,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.gray500,
     textAlign: 'center',
+  },
+  loadMoreContainer: {
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  loadMoreButton: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '500',
   },
 });

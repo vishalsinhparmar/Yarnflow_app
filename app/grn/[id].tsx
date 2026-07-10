@@ -19,6 +19,7 @@ interface GRNItem {
   purchaseOrderItem?: string;
   product?: string;
   productName: string;
+  subProductName?: string;
   productCode?: string;
   orderedQuantity: number;
   orderedWeight?: number;
@@ -26,6 +27,7 @@ interface GRNItem {
   previousWeight?: number;
   receivedQuantity: number;
   receivedWeight?: number;
+  perUnitWeights?: number[];
   pendingQuantity?: number;
   pendingWeight?: number;
   unit: string;
@@ -353,12 +355,30 @@ export default function GRNDetailScreen() {
                   {/* Product Info */}
                   <View style={styles.itemHeader}>
                     <Text style={styles.itemProductName}>
-                      {item.productName}
+                      {item.subProductName
+                        ? `${item.productName} X ${item.subProductName}`
+                        : item.productName}
                     </Text>
-                    <Text style={styles.itemProductCode}>
-                      {item.productCode}
-                    </Text>
+                    {item.productCode ? (
+                      <Text style={styles.itemProductCode}>
+                        {item.productCode}
+                      </Text>
+                    ) : null}
                   </View>
+
+                  {/* Per-Unit Weights */}
+                  {item.perUnitWeights && item.perUnitWeights.length > 0 && (
+                    <View style={styles.perUnitWeightsContainer}>
+                      <Text style={styles.perUnitWeightsLabel}>Per-unit weights:</Text>
+                      <View style={styles.perUnitWeightsRow}>
+                        {item.perUnitWeights.map((w, wi) => (
+                          <View key={wi} style={styles.perUnitWeightChip}>
+                            <Text style={styles.perUnitWeightChipText}>#{wi + 1}: {w.toFixed(2)} kg</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
 
                   {/* Quantities Grid */}
                   <View style={styles.quantitiesGrid}>
@@ -990,5 +1010,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFF",
+  },
+  perUnitWeightsContainer: {
+    backgroundColor: "#F0FDF4",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  perUnitWeightsLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#065F46",
+    marginBottom: 6,
+    textTransform: "uppercase",
+  },
+  perUnitWeightsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  perUnitWeightChip: {
+    backgroundColor: "#D1FAE5",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  perUnitWeightChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#065F46",
   },
 });

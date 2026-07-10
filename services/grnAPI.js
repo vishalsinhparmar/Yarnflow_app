@@ -51,13 +51,6 @@ export const grnAPI = {
     return grnAPI.getAll({ supplier: supplierId, ...params });
   },
 
-  // Approve GRN
-  approve: async (id) => {
-    return apiRequest(`/${id}/approve`, {
-      method: 'PATCH',
-    });
-  },
-
   // Get GRN statistics
   getStats: async () => {
     return apiRequest('/stats');

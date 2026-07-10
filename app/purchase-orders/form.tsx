@@ -12,13 +12,16 @@ import {
     TouchableOpacity,
     View
 } from "react-native";
+// Alert kept only for destructive confirm dialogs (delete/discard)
 // Using TouchableOpacity with Modal for better production compatibility
 import SearchableModal from "@/components/SearchableModal";
+import { useToast } from "@/components/ui/Toast";
 import { BORDER_RADIUS, COLORS, SHADOWS, SPACING } from "@/constants/colors";
 import DatePickerInput from "../../components/DatePickerInput";
 import {
     categoryAPI,
     productAPI,
+    subProductAPI,
     supplierAPI,
     unitAPI,
 } from "../../services/masterDataAPI.js";
@@ -35,6 +38,9 @@ interface FormData {
 interface POItem {
   product: string;
   productName: string;
+  subProduct?: string;
+  subProductName?: string;
+  subProductWeights?: number[];
   quantity: number;
   unit: string;
   weight: number;
@@ -49,18 +55,22 @@ interface Supplier {
 interface Category {
   _id: string;
   categoryName: string;
+  hasSubProducts?: boolean;
 }
 
 interface Product {
   _id: string;
   productName: string;
+  productCode?: string;
   category: string;
+  subProducts?: any[];
 }
 
 export default function PurchaseOrderForm() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const isEditMode = !!id;
+  const toast = useToast();
 
   const [formData, setFormData] = useState<FormData>({
     supplier: "",
@@ -80,19 +90,32 @@ export default function PurchaseOrderForm() {
   });
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierPage, setSupplierPage] = useState(1);
+  const [supplierHasMore, setSupplierHasMore] = useState(false);
+  const [supplierLoadingMore, setSupplierLoadingMore] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<any>({});
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const supplierSearchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const productSearchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modal states for custom pickers
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
+  const [showSubProductModal, setShowSubProductModal] = useState(false);
   const [showUnitModal, setShowUnitModal] = useState(false);
   const [showUnitManagementModal, setShowUnitManagementModal] = useState(false);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number>(0);
+  const [subProductsMap, setSubProductsMap] = useState<Record<string, any[]>>({});
+  const [loadingSubProducts, setLoadingSubProducts] = useState<Record<string, boolean>>({});
+  const [newSubProductNames, setNewSubProductNames] = useState<Record<string, string>>({});
+  const [loadingAddSubProduct, setLoadingAddSubProduct] = useState<Record<string, boolean>>({});
 
   // Dynamic units from backend with defaults as fallback
   const defaultUnits = [
@@ -174,21 +197,88 @@ export default function PurchaseOrderForm() {
     }
   }, [formData.category, products, initialLoadComplete]);
 
+  const PO_PAGE_LIMIT = 50;
+
   const loadDropdownData = async () => {
     try {
       const [suppliersRes, categoriesRes, productsRes] = await Promise.all([
-        supplierAPI.getAll({ limit: 100 }),
+        supplierAPI.getAll({ limit: PO_PAGE_LIMIT, page: 1 }),
         categoryAPI.getAll(),
-        productAPI.getAll({ limit: 200 }),
+        productAPI.getAll({ limit: 500 }),
       ]);
 
-      if (suppliersRes?.success) setSuppliers(suppliersRes.data || []);
+      if (suppliersRes?.success) {
+        setSuppliers(suppliersRes.data || []);
+        const pagination = suppliersRes.pagination;
+        const hasMore = pagination ? 1 < pagination.pages : (suppliersRes.data || []).length === PO_PAGE_LIMIT;
+        setSupplierHasMore(hasMore);
+        setSupplierPage(1);
+      }
       if (categoriesRes?.success) setCategories(categoriesRes.data || []);
       if (productsRes?.success) setProducts(productsRes.data || []);
     } catch (err) {
       console.error("Error loading dropdown data:", err);
-      Alert.alert("Error", "Failed to load form data");
+      toast.showToast('error', 'Load Failed', 'Failed to load form data');
     }
+  };
+
+  const handleSupplierSearch = (query: string) => {
+    if (supplierSearchRef.current) clearTimeout(supplierSearchRef.current);
+    supplierSearchRef.current = setTimeout(async () => {
+      setLoadingSuppliers(true);
+      setSupplierSearchQuery(query);
+      try {
+        const res = await supplierAPI.getAll({ limit: PO_PAGE_LIMIT, page: 1, search: query });
+        if (res?.success) {
+          setSuppliers(res.data || []);
+          const pagination = res.pagination;
+          const hasMore = pagination ? 1 < pagination.pages : (res.data || []).length === PO_PAGE_LIMIT;
+          setSupplierHasMore(hasMore);
+          setSupplierPage(1);
+        }
+      } catch (e) {
+        console.error('Supplier search error:', e);
+      } finally {
+        setLoadingSuppliers(false);
+      }
+    }, 300);
+  };
+
+  const handleSupplierLoadMore = async () => {
+    if (supplierLoadingMore || !supplierHasMore) return;
+    setSupplierLoadingMore(true);
+    try {
+      const nextPage = supplierPage + 1;
+      const res = await supplierAPI.getAll({ limit: PO_PAGE_LIMIT, page: nextPage, search: supplierSearchQuery });
+      if (res?.success) {
+        setSuppliers(prev => [...prev, ...(res.data || [])]);
+        const pagination = res.pagination;
+        const hasMore = pagination ? nextPage < pagination.pages : (res.data || []).length === PO_PAGE_LIMIT;
+        setSupplierHasMore(hasMore);
+        setSupplierPage(nextPage);
+      }
+    } catch (e) {
+      console.error('Supplier load more error:', e);
+    } finally {
+      setSupplierLoadingMore(false);
+    }
+  };
+
+  const handleProductSearch = (query: string) => {
+    if (productSearchRef.current) clearTimeout(productSearchRef.current);
+    productSearchRef.current = setTimeout(async () => {
+      setLoadingProducts(true);
+      try {
+        const params: any = { limit: 100, search: query };
+        if (formData.category) params.category = formData.category;
+        const res = await productAPI.getAll(params);
+        if (res?.success) setFilteredProducts(res.data || []);
+      } catch (e) {
+        console.error('Product search error:', e);
+      } finally {
+        setLoadingProducts(false);
+      }
+    }, 300);
   };
 
   const loadUnits = async () => {
@@ -213,11 +303,11 @@ export default function PurchaseOrderForm() {
   const handleAddUnit = async () => {
     const trimmed = newUnitName.trim();
     if (!trimmed) {
-      Alert.alert('Validation', 'Please enter a unit name');
+      toast.showToast('warning', 'Validation', 'Please enter a unit name');
       return;
     }
     if (units.some((u) => u.label.toLowerCase() === trimmed.toLowerCase())) {
-      Alert.alert('Duplicate', 'This unit already exists');
+      toast.showToast('warning', 'Duplicate', 'This unit already exists');
       return;
     }
     try {
@@ -226,11 +316,12 @@ export default function PurchaseOrderForm() {
       if (response?.success) {
         setNewUnitName('');
         await loadUnits();
+        toast.showToast('success', 'Unit Added', `"${trimmed}" added successfully`);
       } else {
-        Alert.alert('Error', response?.message || 'Failed to create unit');
+        toast.showToast('error', 'Error', response?.message || 'Failed to create unit');
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create unit');
+      toast.showToast('error', 'Error', err.message || 'Failed to create unit');
     } finally {
       setUnitActionLoading(false);
     }
@@ -239,7 +330,7 @@ export default function PurchaseOrderForm() {
   const handleUpdateUnit = async () => {
     const trimmed = editUnitName.trim();
     if (!trimmed) {
-      Alert.alert('Validation', 'Please enter a unit name');
+      toast.showToast('warning', 'Validation', 'Please enter a unit name');
       return;
     }
     if (!editingUnit) return;
@@ -250,11 +341,12 @@ export default function PurchaseOrderForm() {
         setEditingUnit(null);
         setEditUnitName('');
         await loadUnits();
+        toast.showToast('success', 'Unit Updated', 'Unit updated successfully');
       } else {
-        Alert.alert('Error', response?.message || 'Failed to update unit');
+        toast.showToast('error', 'Error', response?.message || 'Failed to update unit');
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update unit');
+      toast.showToast('error', 'Error', err.message || 'Failed to update unit');
     } finally {
       setUnitActionLoading(false);
     }
@@ -275,11 +367,12 @@ export default function PurchaseOrderForm() {
               const response = await unitAPI.delete(unit._id);
               if (response?.success) {
                 await loadUnits();
+                toast.showToast('success', 'Unit Deleted', 'Unit removed successfully');
               } else {
-                Alert.alert('Error', response?.message || 'Failed to delete unit');
+                toast.showToast('error', 'Error', response?.message || 'Failed to delete unit');
               }
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete unit');
+              toast.showToast('error', 'Error', err.message || 'Failed to delete unit');
             } finally {
               setUnitActionLoading(false);
             }
@@ -305,9 +398,15 @@ export default function PurchaseOrderForm() {
             const productId = item.product?._id || item.product || "";
             const productName = item.productName || item.product?.productName || item.product?.name || "";
             console.log("📦 PO Item loaded:", { productId, productName, rawProduct: item.product });
+            const savedWeights = Array.isArray(item.subProductWeights)
+              ? item.subProductWeights.map((w: any) => Number(w) || 0)
+              : [];
             return {
               product: productId,
               productName: productName,
+              subProduct: item.subProduct?._id || item.subProduct || "",
+              subProductName: item.subProductName || item.subProduct?.name || "",
+              subProductWeights: savedWeights,
               quantity: item.quantity || 1,
               unit: item.unit || "Bags",
               weight: item.weight || 0,
@@ -317,6 +416,8 @@ export default function PurchaseOrderForm() {
             {
               product: "",
               productName: "",
+              subProduct: "",
+              subProductName: "",
               quantity: 1,
               unit: "Bags",
               weight: 0,
@@ -325,12 +426,18 @@ export default function PurchaseOrderForm() {
           ],
           notes: po.notes || "",
         });
+        // Pre-load sub-products for all items that have a product
+        const productIds = (po.items || [])
+          .map((item: any) => item.product?._id || item.product)
+          .filter(Boolean);
+        const uniqueIds = [...new Set(productIds)] as string[];
+        uniqueIds.forEach(pid => loadSubProductsForProduct(pid, true));
         // Mark initial load as complete after a short delay to allow state to settle
         setTimeout(() => setInitialLoadComplete(true), 500);
       }
     } catch (err) {
       console.error("Error loading PO:", err);
-      Alert.alert("Error", "Failed to load purchase order");
+      toast.showToast('error', 'Load Failed', 'Failed to load purchase order');
     } finally {
       setLoading(false);
     }
@@ -378,7 +485,7 @@ export default function PurchaseOrderForm() {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert("Validation Error", "Please fix the errors and try again");
+      toast.showToast('warning', 'Validation Error', 'Please fix the errors and try again');
       return;
     }
 
@@ -392,6 +499,11 @@ export default function PurchaseOrderForm() {
         items: formData.items.map((item) => ({
           product: item.product,
           productName: item.productName || undefined,
+          ...(item.subProduct ? {
+            subProduct: item.subProduct,
+            subProductName: item.subProductName,
+            subProductWeights: (item.subProductWeights || []).filter(w => w > 0),
+          } : {}),
           quantity: Number(item.quantity),
           unit: item.unit,
           weight: Number(item.weight),
@@ -402,20 +514,39 @@ export default function PurchaseOrderForm() {
 
       if (isEditMode) {
         await purchaseOrderAPI.update(id as string, submitData);
-        Alert.alert("Success", "Purchase order updated successfully", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
+        toast.showToast('success', 'PO Updated', 'Purchase order updated successfully');
+        setTimeout(() => router.back(), 800);
       } else {
         await purchaseOrderAPI.create(submitData);
-        Alert.alert("Success", "Purchase order created successfully", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
+        toast.showToast('success', 'PO Created', 'Purchase order created successfully');
+        setTimeout(() => router.back(), 800);
       }
     } catch (err: any) {
       console.error("Error saving PO:", err);
-      Alert.alert("Error", err.message || "Failed to save purchase order");
+      toast.showToast('error', 'Save Failed', err.message || 'Failed to save purchase order');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const categoryHasSubProducts = !!categories.find(c => c._id === formData.category)?.hasSubProducts;
+
+  const loadSubProductsForProduct = async (productId: string, force = false) => {
+    if (!productId) return;
+    if (!force && subProductsMap[productId] !== undefined) return;
+    setLoadingSubProducts(prev => ({ ...prev, [productId]: true }));
+    try {
+      const response = await subProductAPI.getByProduct(productId);
+      if (response?.success && Array.isArray(response.data)) {
+        setSubProductsMap(prev => ({ ...prev, [productId]: response.data }));
+      } else {
+        setSubProductsMap(prev => ({ ...prev, [productId]: [] }));
+      }
+    } catch (err) {
+      console.error('Error loading sub-products:', err);
+      setSubProductsMap(prev => ({ ...prev, [productId]: [] }));
+    } finally {
+      setLoadingSubProducts(prev => ({ ...prev, [productId]: false }));
     }
   };
 
@@ -427,6 +558,9 @@ export default function PurchaseOrderForm() {
         {
           product: "",
           productName: "",
+          subProduct: "",
+          subProductName: "",
+          subProductWeights: [],
           quantity: 1,
           unit: "Bags",
           weight: 0,
@@ -436,6 +570,82 @@ export default function PurchaseOrderForm() {
     }));
   };
 
+  const addSubProductRow = (baseIndex: number) => {
+    const baseItem = formData.items[baseIndex];
+    const newRow: POItem = {
+      product: baseItem.product,
+      productName: baseItem.productName,
+      subProduct: '',
+      subProductName: '',
+      subProductWeights: [],
+      quantity: 1,
+      unit: baseItem.unit,
+      weight: 0,
+      notes: '',
+    };
+    const updated = [...formData.items];
+    updated.splice(baseIndex + 1, 0, newRow);
+    setFormData(prev => ({ ...prev, items: updated }));
+  };
+
+  const handleSubProductWeightsChange = (index: number, weights: number[]) => {
+    const total = weights.reduce((sum, w) => sum + (Number(w) || 0), 0);
+    setFormData(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index ? { ...item, subProductWeights: weights, weight: total } : item
+      ),
+    }));
+  };
+
+  const handleAddSubProductForProduct = async (productId: string) => {
+    const name = (newSubProductNames[productId] || '').trim();
+    if (!name || !productId) return;
+    setLoadingAddSubProduct(prev => ({ ...prev, [productId]: true }));
+    try {
+      const response = await subProductAPI.bulkAdd(productId, [name]);
+      if (response?.success) {
+        const created = Array.isArray(response.data) ? response.data : [];
+        setSubProductsMap(prev => ({
+          ...prev,
+          [productId]: [...(prev[productId] || []), ...created],
+        }));
+        setProducts(prev => prev.map(p => {
+          if (p._id !== productId) return p;
+          const existing = Array.isArray(p.subProducts) ? p.subProducts : [];
+          return { ...p, subProducts: [...existing, ...created] };
+        }));
+        setNewSubProductNames(prev => ({ ...prev, [productId]: '' }));
+        toast.showToast('success', 'Sub-Product Added', `"${name}" added to product.`);
+      } else {
+        throw new Error(response?.message || 'Failed to add sub-product');
+      }
+    } catch (error: any) {
+      console.error('Error adding sub-product:', error);
+      toast.showToast('error', 'Add Failed', error.message || 'Failed to add sub-product');
+    } finally {
+      setLoadingAddSubProduct(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  const handleQuantityChange = (index: number, qty: number) => {
+    const item = formData.items[index];
+    if (categoryHasSubProducts && item.subProduct) {
+      const count = qty === 0 ? 0 : Math.max(1, qty || 1);
+      const current = Array.isArray(item.subProductWeights) ? item.subProductWeights : [];
+      const next = Array.from({ length: count }, (_, i) => i < current.length ? current[i] : 0);
+      const total = next.reduce((s, w) => s + (Number(w) || 0), 0);
+      setFormData(prev => ({
+        ...prev,
+        items: prev.items.map((it, i) =>
+          i === index ? { ...it, quantity: count, subProductWeights: next, weight: total } : it
+        ),
+      }));
+    } else {
+      updateItem(index, 'quantity', qty);
+    }
+  };
+
   const removeItem = (index: number) => {
     if (formData.items.length > 1) {
       setFormData((prev) => ({
@@ -443,6 +653,16 @@ export default function PurchaseOrderForm() {
         items: prev.items.filter((_, i) => i !== index),
       }));
     }
+  };
+
+  const updateItemWithSubProduct = (index: number, productId: string, productName: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === index ? { ...item, product: productId, productName, subProduct: '', subProductName: '', subProductWeights: [] } : item
+      ),
+    }));
+    loadSubProductsForProduct(productId, true);
   };
 
   const updateItem = (index: number, field: keyof POItem, value: any) => {
@@ -485,22 +705,17 @@ export default function PurchaseOrderForm() {
           ]}
           onPress={() => {
             if (!formData.category) {
-              Alert.alert(
-                "Category Required",
-                "Please select a category first to see available products.",
-              );
+              toast.showToast('warning', 'Category Required', 'Please select a category first to see available products.');
               return;
             }
             if (filteredProducts.length === 0) {
-              Alert.alert(
-                "No Products",
-                "No products available for the selected category.",
-              );
+              toast.showToast('info', 'No Products', 'No products available for the selected category.');
               return;
             }
             setSelectedItemIndex(index);
             setShowProductModal(true);
           }}
+
           disabled={!formData.category}
         >
           <Text
@@ -543,6 +758,73 @@ export default function PurchaseOrderForm() {
         )}
       </View>
 
+      {/* Sub-Product Selection — only for categories with hasSubProducts */}
+      {categoryHasSubProducts && item.product && (
+        <View style={styles.inputGroup}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={styles.label}>Sub-Product</Text>
+            {loadingSubProducts[item.product] && (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.pickerButton}
+            onPress={() => {
+              setSelectedItemIndex(index);
+              setShowSubProductModal(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.pickerButtonText,
+                !item.subProduct && styles.placeholderText,
+              ]}
+              numberOfLines={1}
+            >
+              {item.subProductName || 'Select Sub-Product (optional)'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+          </TouchableOpacity>
+          {item.subProduct ? (
+            <TouchableOpacity
+              onPress={() => setFormData(prev => ({
+                ...prev,
+                items: prev.items.map((it, i) =>
+                  i === index ? { ...it, subProduct: '', subProductName: '', subProductWeights: [] } : it
+                ),
+              }))}
+            >
+              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>✕ Clear sub-product</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Inline new sub-product creation for this product */}
+          <View style={styles.newSubProductRow}>
+            <TextInput
+              style={styles.newSubProductInput}
+              value={newSubProductNames[item.product] || ''}
+              onChangeText={(text) => setNewSubProductNames(prev => ({ ...prev, [item.product]: text }))}
+              placeholder="New sub-product name"
+              placeholderTextColor={COLORS.gray400}
+            />
+            <TouchableOpacity
+              style={[
+                styles.newSubProductButton,
+                (!newSubProductNames[item.product]?.trim() || loadingAddSubProduct[item.product]) && styles.newSubProductButtonDisabled
+              ]}
+              onPress={() => handleAddSubProductForProduct(item.product)}
+              disabled={!newSubProductNames[item.product]?.trim() || loadingAddSubProduct[item.product]}
+            >
+              {loadingAddSubProduct[item.product] ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.newSubProductButtonText}>+ Add</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Quantity and Unit */}
       <View style={styles.row}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: SPACING.sm }]}>
@@ -552,11 +834,21 @@ export default function PurchaseOrderForm() {
               styles.input,
               errors[`item_${index}_quantity`] && styles.inputError,
             ]}
-            value={item.quantity.toString()}
-            onChangeText={(text) =>
-              updateItem(index, "quantity", parseInt(text) || 0)
-            }
-            keyboardType="numeric"
+            value={item.quantity === 0 ? '' : item.quantity.toString()}
+            onChangeText={(text) => {
+              const cleaned = text.replace(/[^0-9]/g, '');
+              if (cleaned === '') {
+                updateItem(index, 'quantity', 0);
+              } else {
+                handleQuantityChange(index, parseInt(cleaned, 10));
+              }
+            }}
+            onBlur={() => {
+              if (!item.quantity || item.quantity <= 0) {
+                handleQuantityChange(index, 1);
+              }
+            }}
+            keyboardType="number-pad"
             placeholder="1"
           />
           {errors[`item_${index}_quantity`] && (
@@ -595,25 +887,58 @@ export default function PurchaseOrderForm() {
         </View>
       </View>
 
-      {/* Weight */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Weight (Kg) *</Text>
-        <TextInput
-          style={[
-            styles.input,
-            errors[`item_${index}_weight`] && styles.inputError,
-          ]}
-          value={item.weight.toString()}
-          onChangeText={(text) =>
-            updateItem(index, "weight", parseFloat(text) || 0)
-          }
-          keyboardType="numeric"
-          placeholder="0"
-        />
-        {errors[`item_${index}_weight`] && (
-          <Text style={styles.errorText}>{errors[`item_${index}_weight`]}</Text>
-        )}
-      </View>
+      {/* Weight — per-unit when sub-product selected, single when not */}
+      {categoryHasSubProducts && item.subProduct ? (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Per-Unit Weights (Kg) *</Text>
+          <Text style={{ fontSize: 11, color: COLORS.gray500, marginBottom: 6 }}>
+            Enter weight for each of the {item.quantity || '?'} unit{(item.quantity || 0) > 1 ? 's' : ''}
+          </Text>
+          {Array.from({ length: Math.max(0, item.quantity || 0) }).map((_, unitIdx) => (
+            <View key={unitIdx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ fontSize: 13, color: COLORS.gray600, width: 64 }}>Unit {unitIdx + 1}</Text>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={((item.subProductWeights || [])[unitIdx] ?? 0).toString()}
+                onChangeText={(text) => {
+                  const weights = [...(item.subProductWeights || Array(item.quantity).fill(0))];
+                  weights[unitIdx] = parseFloat(text) || 0;
+                  handleSubProductWeightsChange(index, weights);
+                }}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+          ))}
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 }}>
+            <Text style={{ fontSize: 12, color: COLORS.gray600 }}>
+              Total: <Text style={{ fontWeight: '600', color: COLORS.gray900 }}>{item.weight.toFixed(2)} Kg</Text>
+            </Text>
+          </View>
+          {errors[`item_${index}_weight`] && (
+            <Text style={styles.errorText}>{errors[`item_${index}_weight`]}</Text>
+          )}
+        </View>
+      ) : (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Weight (Kg) *</Text>
+          <TextInput
+            style={[
+              styles.input,
+              errors[`item_${index}_weight`] && styles.inputError,
+              categoryHasSubProducts && item.subProduct ? { backgroundColor: '#F3F4F6' } : {},
+            ]}
+            value={item.weight.toString()}
+            onChangeText={(text) => updateItem(index, "weight", parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+            editable={!(categoryHasSubProducts && item.subProduct)}
+          />
+          {errors[`item_${index}_weight`] && (
+            <Text style={styles.errorText}>{errors[`item_${index}_weight`]}</Text>
+          )}
+        </View>
+      )}
 
       {/* Item Notes */}
       <View style={styles.inputGroup}>
@@ -627,6 +952,17 @@ export default function PurchaseOrderForm() {
           numberOfLines={3}
         />
       </View>
+
+      {/* Add Sub-Product Row — only for categories with sub-products */}
+      {categoryHasSubProducts && item.product && (
+        <TouchableOpacity
+          style={styles.addSubProductRowButton}
+          onPress={() => addSubProductRow(index)}
+        >
+          <Ionicons name="add-circle-outline" size={16} color={COLORS.primary} />
+          <Text style={styles.addSubProductRowText}>Add Sub-Product Row</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -800,8 +1136,14 @@ export default function PurchaseOrderForm() {
         }}
         getLabel={(s) => s.companyName}
         getValue={(s) => s._id}
+        getSubtitle={(s) => s.city || undefined}
         searchPlaceholder="Search suppliers by name..."
         emptyMessage="No suppliers found"
+        onSearch={handleSupplierSearch}
+        loading={loadingSuppliers}
+        onLoadMore={handleSupplierLoadMore}
+        loadingMore={supplierLoadingMore}
+        hasMore={supplierHasMore}
       />
 
       <SearchableModal
@@ -827,17 +1169,41 @@ export default function PurchaseOrderForm() {
         options={filteredProducts}
         selectedValue={formData.items[selectedItemIndex]?.product || ""}
         onSelect={(value: string, item: any) => {
-          if (value && filteredProducts.length > 0) {
-            updateItem(selectedItemIndex, "product", value);
-            if (item?.productName) {
-              updateItem(selectedItemIndex, "productName", item.productName);
-            }
+          if (value) {
+            updateItemWithSubProduct(selectedItemIndex, value, item?.productName || '');
           }
         }}
         getLabel={(p) => p.productName}
         getValue={(p) => p._id}
         searchPlaceholder="Search products..."
         emptyMessage={!formData.category ? "Select a category first" : "No products found for this category"}
+        onSearch={handleProductSearch}
+        loading={loadingProducts}
+      />
+
+      <SearchableModal
+        visible={showSubProductModal}
+        onClose={() => setShowSubProductModal(false)}
+        title="Select Sub-Product"
+        options={subProductsMap[formData.items[selectedItemIndex]?.product] || []}
+        selectedValue={formData.items[selectedItemIndex]?.subProduct || ""}
+        onSelect={(value: string, sp: any) => {
+          const qty = formData.items[selectedItemIndex]?.quantity || 1;
+          const weights = Array.from({ length: qty }, () => 0);
+          setFormData(prev => ({
+            ...prev,
+            items: prev.items.map((it, i) =>
+              i === selectedItemIndex
+                ? { ...it, subProduct: value, subProductName: sp?.name || '', subProductWeights: weights, weight: 0 }
+                : it
+            ),
+          }));
+          setShowSubProductModal(false);
+        }}
+        getLabel={(sp) => sp.name}
+        getValue={(sp) => sp._id}
+        searchPlaceholder="Search sub-products..."
+        emptyMessage={loadingSubProducts[formData.items[selectedItemIndex]?.product] ? 'Loading...' : 'No sub-products found'}
       />
 
       <SearchableModal
@@ -1462,5 +1828,59 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: "bold",
+  },
+  addSubProductRowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: '#EFF6FF',
+    borderRadius: BORDER_RADIUS.sm,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginTop: SPACING.xs,
+    gap: 6,
+  },
+  addSubProductRowText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  newSubProductRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray200,
+  },
+  newSubProductInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.gray300,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontSize: 14,
+    color: COLORS.gray900,
+    backgroundColor: COLORS.white,
+  },
+  newSubProductButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: '#10B981',
+    borderRadius: BORDER_RADIUS.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 72,
+  },
+  newSubProductButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  newSubProductButtonText: {
+    fontSize: 14,
+    color: COLORS.white,
+    fontWeight: '600',
   },
 });

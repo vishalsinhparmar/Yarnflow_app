@@ -17,6 +17,7 @@ interface ProductCardProps {
     issuedWeight?: number;
     lotCount?: number;
     supplierNames?: string;
+    subProductCount?: number;
   };
   onPress: () => void;
 }
@@ -34,9 +35,18 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
           <Text style={styles.productName} numberOfLines={1}>
             {product.productName}
           </Text>
-          {product.productCode && (
-            <Text style={styles.productCode}>{product.productCode}</Text>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+            {product.productCode && (
+              <Text style={styles.productCode}>{product.productCode}</Text>
+            )}
+            {product.subProductCount && product.subProductCount > 0 ? (
+              <View style={styles.subProductBadge}>
+                <Text style={styles.subProductBadgeText}>
+                  {product.subProductCount} sub-product{product.subProductCount > 1 ? 's' : ''}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         </View>
         <View style={styles.stockBadge}>
           <Text style={styles.stockValue}>
@@ -151,6 +161,19 @@ const styles = StyleSheet.create({
   productCode: {
     fontSize: 12,
     color: COLORS.gray500,
+  },
+  subProductBadge: {
+    backgroundColor: '#FCE7F3',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#F9A8D4',
+  },
+  subProductBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#BE185D',
   },
   stockBadge: {
     backgroundColor: COLORS.success,

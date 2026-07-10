@@ -81,6 +81,35 @@ export const inventoryAPI = {
   getStats: async () => {
     return apiRequest('/stats');
   },
+
+  // Get inventory products list with stock in/out breakdown (grouped by product)
+  getProducts: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString ? `?${queryString}` : '';
+    return apiRequest(endpoint);
+  },
+
+  // Get product inventory detail with sub-product breakdown and per-unit weights
+  getProductDetail: async (productId) => {
+    return apiRequest(`/product/${productId}`);
+  },
+
+  // Get all inventory lots with filtering
+  getAllLots: async (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString ? `/lots?${queryString}` : '/lots';
+    return apiRequest(endpoint);
+  },
+
+  // Get single inventory lot details
+  getLotById: async (id) => {
+    return apiRequest(`/lots/${id}`);
+  },
+
+  // Get movement history for a lot
+  getMovementHistory: async (id) => {
+    return apiRequest(`/lots/${id}/movements`);
+  },
 };
 
 // ============ UTILITY FUNCTIONS ============

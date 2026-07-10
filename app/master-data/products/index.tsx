@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useToast } from '@/components/ui/Toast';
 import { productAPI } from '../../../services/index.js';
 
 interface Product {
@@ -27,6 +28,7 @@ interface Product {
 
 export default function ProductsScreen() {
   const router = useRouter();
+  const toast = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -141,9 +143,9 @@ export default function ProductsScreen() {
             try {
               await productAPI.delete(productId);
               setProducts(prev => prev.filter(p => p._id !== productId));
-              Alert.alert('Success', 'Product deleted successfully');
+              toast.showToast('success', 'Product Deleted', 'Product removed successfully');
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete product');
+              toast.showToast('error', 'Delete Failed', err.message || 'Failed to delete product');
             }
           },
         },

@@ -40,7 +40,7 @@ export default function MasterDataScreen() {
   }, []);
 
   const navigateToScreen = (screenName: string) => {
-    router.push(`/master-data/${screenName.toLowerCase()}/`);
+    router.push(`/master-data/${screenName.toLowerCase()}/` as any);
   };
 
   const dashboardItems: { title: string; count: number; subtitle: string; color: string; bgColor: string; icon: keyof typeof Ionicons.glyphMap; screen: string }[] = [
@@ -79,6 +79,15 @@ export default function MasterDataScreen() {
       bgColor: '#FEF3C7',
       icon: 'folder-open',
       screen: 'categories',
+    },
+    {
+      title: 'Sub-Products',
+      count: stats?.subProducts?.total || 0,
+      subtitle: 'View all sub-products',
+      color: '#EC4899',
+      bgColor: '#FCE7F3',
+      icon: 'git-branch',
+      screen: 'sub-products',
     },
   ];
 

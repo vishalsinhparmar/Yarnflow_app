@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useToast } from '@/components/ui/Toast';
 import { categoryAPI } from '../../../services/index.js';
 
 interface Category {
@@ -26,6 +27,7 @@ interface Category {
 
 export default function CategoriesScreen() {
   const router = useRouter();
+  const toast = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -135,9 +137,9 @@ export default function CategoriesScreen() {
             try {
               await categoryAPI.delete(categoryId);
               setCategories(prev => prev.filter(c => c._id !== categoryId));
-              Alert.alert('Success', 'Category deleted successfully');
+              toast.showToast('success', 'Category Deleted', 'Category removed successfully');
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete category');
+              toast.showToast('error', 'Delete Failed', err.message || 'Failed to delete category');
             }
           },
         },

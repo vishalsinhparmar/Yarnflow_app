@@ -14,8 +14,9 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { WAREHOUSE_LOCATIONS } from "../../constants/warehouseLocations";
+import { useWarehouseLocations } from "../../hooks/useWarehouseLocations";
 import { grnAPI } from "../../services/grnAPI";
+// warehouse locations loaded dynamically
 import { purchaseOrderAPI } from "../../services/purchaseOrderAPI";
 
 interface GRNItem {
@@ -23,6 +24,7 @@ interface GRNItem {
   purchaseOrderItem: string;
   product?: string;
   productName: string;
+  subProductName?: string;
   productCode?: string;
   orderedQuantity: number;
   orderedWeight: number;
@@ -30,6 +32,7 @@ interface GRNItem {
   previousWeight: number;
   receivedQuantity: number;
   receivedWeight: number;
+  perUnitWeights?: number[];
   pendingQuantity: number;
   pendingWeight: number;
   unit: string;
@@ -39,6 +42,7 @@ interface GRNItem {
   markAsComplete?: boolean;
   manuallyCompleted?: boolean;
   completionReason?: string;
+  specifications?: any;
 }
 
 interface GRNFormData {
@@ -55,9 +59,15 @@ export default function GRNFormScreen() {
   const { id, poId } = useLocalSearchParams();
   const isEditMode = !!id;
 
+  const { locations: warehouseLocations } = useWarehouseLocations();
+
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [poPage, setPoPage] = useState(1);
+  const [poHasMore, setPoHasMore] = useState(false);
+  const [poLoadingMore, setPoLoadingMore] = useState(false);
+  const [poSearch, setPoSearch] = useState('');
   const [selectedPO, setSelectedPO] = useState<any>(null);
   const [loadingPOs, setLoadingPOs] = useState(true);
   const [loadingGRN, setLoadingGRN] = useState(false);
@@ -99,12 +109,17 @@ export default function GRNFormScreen() {
     }
   }, [poId]);
 
-  const loadPurchaseOrders = async () => {
+  const GRN_PAGE_LIMIT = 50;
+
+  const loadPurchaseOrders = async (search = '', page = 1, append = false) => {
     try {
-      setLoadingPOs(true);
+      if (!append) setLoadingPOs(true);
+      else setPoLoadingMore(true);
       console.log("🔗 Loading purchase orders...");
 
-      const response = await purchaseOrderAPI.getAll({ limit: 100 });
+      const params: any = { limit: GRN_PAGE_LIMIT, page };
+      if (search) params.search = search;
+      const response = await purchaseOrderAPI.getAll(params);
       console.log("📦 POs response:", response);
 
       if (response?.success && response?.data) {
@@ -113,17 +128,39 @@ export default function GRNFormScreen() {
           (po: any) =>
             po.status !== "Fully_Received" && po.status !== "Complete",
         );
-        setPurchaseOrders(incompletePOs);
+        if (append) {
+          setPurchaseOrders(prev => [...prev, ...incompletePOs]);
+        } else {
+          setPurchaseOrders(incompletePOs);
+        }
+        const pagination = response.pagination;
+        const hasMore = pagination ? page < pagination.pages : response.data.length === GRN_PAGE_LIMIT;
+        setPoHasMore(hasMore);
+        setPoPage(page);
+        setPoSearch(search);
         console.log(`✅ Loaded ${incompletePOs.length} incomplete POs`);
       } else {
-        setPurchaseOrders([]);
+        if (!append) setPurchaseOrders([]);
       }
     } catch (err: any) {
       console.error("❌ Error loading POs:", err);
-      toast.showToast('error', 'Load Failed', 'Failed to load purchase orders. Please refresh.');
-      setPurchaseOrders([]);
+      if (!append) {
+        toast.showToast('error', 'Load Failed', 'Failed to load purchase orders. Please refresh.');
+        setPurchaseOrders([]);
+      }
     } finally {
       setLoadingPOs(false);
+      setPoLoadingMore(false);
+    }
+  };
+
+  const handlePOSearch = (query: string) => {
+    loadPurchaseOrders(query, 1, false);
+  };
+
+  const handlePOLoadMore = () => {
+    if (!poLoadingMore && poHasMore) {
+      loadPurchaseOrders(poSearch, poPage + 1, true);
     }
   };
 
@@ -143,16 +180,43 @@ export default function GRNFormScreen() {
           storageInstructions: grn.storageInstructions || "",
           generalNotes: grn.generalNotes || "",
           items:
-            grn.items?.map((item: any) => ({
-              purchaseOrderItem: item.purchaseOrderItem || item._id,
-              productName: item.productName,
-              productCode: item.productCode,
-              orderedQuantity: item.orderedQuantity,
-              receivedQuantity: item.receivedQuantity || 0,
-              unit: item.unit,
-              warehouseLocation: item.warehouseLocation || "",
-              notes: item.notes || "",
-            })) || [],
+            grn.items?.map((item: any) => {
+              const perUnitWeights = Array.isArray(item.receivedSubProductWeights)
+                ? item.receivedSubProductWeights
+                : Array.isArray(item.perUnitWeights)
+                  ? item.perUnitWeights
+                  : [];
+              const receivedWeight = Number(item.receivedWeight) || 0;
+              const receivedQuantity = Number(item.receivedQuantity) || 0;
+              const weightPerUnit = receivedQuantity > 0
+                ? parseFloat((receivedWeight / receivedQuantity).toFixed(2))
+                : 0;
+              return {
+                purchaseOrderItem: item.purchaseOrderItem || item._id,
+                productName: item.productName,
+                subProductName: item.subProductName || "",
+                productCode: item.productCode,
+                orderedQuantity: item.orderedQuantity || 0,
+                orderedWeight: item.orderedWeight || 0,
+                previouslyReceived: item.previouslyReceived || 0,
+                previousWeight: item.previousWeight || 0,
+                receivedQuantity: receivedQuantity,
+                receivedWeight: receivedWeight,
+                perUnitWeights: perUnitWeights.length > 0
+                  ? perUnitWeights.map((w: number) => parseFloat(w.toFixed(2)))
+                  : receivedQuantity > 0
+                    ? Array.from({ length: receivedQuantity }, () => weightPerUnit)
+                    : [],
+                pendingQuantity: item.pendingQuantity || 0,
+                pendingWeight: item.pendingWeight || 0,
+                unit: item.unit || "Bags",
+                warehouseLocation: item.warehouseLocation || "",
+                notes: item.notes || "",
+                isCompleted: item.pendingQuantity <= 0 || item.manuallyCompleted,
+                manuallyCompleted: item.manuallyCompleted || false,
+                markAsComplete: item.manuallyCompleted || false,
+              };
+            }) || [],
         });
 
         if (grn.purchaseOrder) {
@@ -210,16 +274,25 @@ export default function GRNFormScreen() {
             const pendingQty = orderedQty - receivedQty;
             const pendingWt = orderedWeight - receivedWt;
 
+            const initialQty = pendingQty > 0 ? pendingQty : 0;
+            const initialWeight = pendingWt > 0 ? pendingWt : 0;
+            const perUnitWeight = initialQty > 0
+              ? parseFloat((initialWeight / initialQty).toFixed(2))
+              : 0;
             return {
               purchaseOrderItem: item._id,
               productName: item.productName,
+              subProductName: item.subProductName || item.subProduct?.name || "",
               productCode: item.productCode,
               orderedQuantity: orderedQty,
               orderedWeight: orderedWeight,
               previouslyReceived: receivedQty,
               previousWeight: receivedWt,
-              receivedQuantity: pendingQty > 0 ? pendingQty : 0,
-              receivedWeight: pendingWt > 0 ? pendingWt : 0,
+              receivedQuantity: initialQty,
+              receivedWeight: initialWeight,
+              perUnitWeights: (item.subProductName || item.subProduct?.name) && initialQty > 0
+                ? Array.from({ length: initialQty }, () => perUnitWeight)
+                : [],
               pendingQuantity: pendingQty,
               pendingWeight: pendingWt,
               unit: item.unit,
@@ -228,6 +301,7 @@ export default function GRNFormScreen() {
               notes: "",
               isCompleted: pendingQty <= 0 || item.manuallyCompleted,
               manuallyCompleted: item.manuallyCompleted || false,
+              markAsComplete: false,
             };
           })
           .filter((item: GRNItem) => !item.isCompleted);
@@ -260,32 +334,83 @@ export default function GRNFormScreen() {
     }
   };
 
+  const weightPerUnitForItem = (item: GRNItem) => {
+    const receivedQty = Number(item.receivedQuantity) || 0;
+    const receivedWt = Number(item.receivedWeight) || 0;
+    if (receivedQty > 0 && receivedWt > 0) return receivedWt / receivedQty;
+    if (item.orderedQuantity > 0 && item.orderedWeight > 0) {
+      return item.orderedWeight / item.orderedQuantity;
+    }
+    return 0;
+  };
+
+  const distributeWeights = (item: GRNItem, totalWeight: number, quantity: number): number[] => {
+    const qty = Math.floor(quantity || 0);
+    if (qty <= 0) return [];
+    const perUnit = qty > 0 ? totalWeight / qty : 0;
+    // Preserve existing per-unit weights when possible, only pad/truncate
+    const current = Array.isArray(item.perUnitWeights) ? item.perUnitWeights : [];
+    const next = Array.from({ length: qty }, (_, i) => {
+      if (i < current.length) return current[i];
+      return perUnit;
+    });
+    // Rebalance to match total if current sum differs significantly from total
+    const sum = next.reduce((s, w) => s + (Number(w) || 0), 0);
+    if (Math.abs(sum - totalWeight) > 0.001 && totalWeight > 0) {
+      return next.map(() => perUnit);
+    }
+    return next;
+  };
+
   const handleItemChange = (index: number, field: string, value: any) => {
     const updatedItems = [...formData.items];
     const item = updatedItems[index];
+    const numValue = Number(value) || 0;
 
-    updatedItems[index] = {
-      ...item,
-      [field]: value,
-    };
+    const hasSubProduct = !!item.subProductName;
 
-    // Auto-calculate pending quantity and weight
     if (field === "receivedQuantity") {
-      const qty = Number(value) || 0;
       const maxAllowed = item.orderedQuantity - (item.previouslyReceived || 0);
-      updatedItems[index].pendingQuantity = maxAllowed - qty;
+      const qty = Math.floor(Math.max(0, Math.min(maxAllowed, numValue)));
+      const wpu = weightPerUnitForItem(item);
+      const currentWeight = Number(item.receivedWeight) || 0;
+      // If no weight was set yet (and ordered weight exists), default to qty * ordered ratio
+      const defaultWeight = (item.orderedQuantity > 0 && item.orderedWeight > 0 && currentWeight === 0)
+        ? qty * (item.orderedWeight / item.orderedQuantity)
+        : currentWeight;
+      // Only track per-unit weights for sub-product items
+      const perUnit = currentWeight > 0 && qty > 0 ? currentWeight / qty : wpu;
+      const currentWeights = hasSubProduct && Array.isArray(item.perUnitWeights) ? item.perUnitWeights : [];
+      const nextWeights = hasSubProduct
+        ? Array.from({ length: qty }, (_, i) => i < currentWeights.length ? currentWeights[i] : perUnit)
+        : [];
+      const finalWeight = hasSubProduct && nextWeights.length > 0
+        ? nextWeights.reduce((s, w) => s + (Number(w) || 0), 0) || defaultWeight
+        : defaultWeight;
 
-      // Auto-calculate weight based on quantity
-      if (item.orderedQuantity > 0 && item.orderedWeight > 0) {
-        const weightPerUnit = item.orderedWeight / item.orderedQuantity;
-        updatedItems[index].receivedWeight = qty * weightPerUnit;
-        updatedItems[index].pendingWeight =
-          item.orderedWeight - item.previousWeight - qty * weightPerUnit;
-      }
+      updatedItems[index] = {
+        ...item,
+        receivedQuantity: qty,
+        pendingQuantity: maxAllowed - qty,
+        receivedWeight: finalWeight,
+        pendingWeight: item.orderedWeight - item.previousWeight - finalWeight,
+        perUnitWeights: nextWeights,
+      };
     } else if (field === "receivedWeight") {
-      const weight = Number(value) || 0;
-      updatedItems[index].pendingWeight =
-        item.orderedWeight - item.previousWeight - weight;
+      const maxWeight = item.orderedWeight - (item.previousWeight || 0);
+      const weight = maxWeight > 0
+        ? Math.max(0, Math.min(maxWeight, numValue))
+        : Math.max(0, numValue);
+      const qty = Number(item.receivedQuantity) || 0;
+      const nextWeights = hasSubProduct ? distributeWeights(item, weight, qty) : [];
+      updatedItems[index] = {
+        ...item,
+        receivedWeight: weight,
+        pendingWeight: item.orderedWeight - item.previousWeight - weight,
+        perUnitWeights: nextWeights,
+      };
+    } else {
+      updatedItems[index] = { ...item, [field]: value };
     }
 
     setFormData((prev) => ({
@@ -298,26 +423,51 @@ export default function GRNFormScreen() {
     const item = formData.items[index];
     const maxAllowed = item.orderedQuantity - (item.previouslyReceived || 0);
     const newQty = Math.min(maxAllowed, Number(item.receivedQuantity || 0) + 1);
-    handleItemChange(index, "receivedQuantity", String(newQty));
+    handleItemChange(index, "receivedQuantity", newQty);
   };
 
   const decrementQuantity = (index: number) => {
     const item = formData.items[index];
     const newQty = Math.max(0, Number(item.receivedQuantity || 0) - 1);
-    handleItemChange(index, "receivedQuantity", String(newQty));
+    handleItemChange(index, "receivedQuantity", newQty);
+  };
+
+  const weightStepForItem = (item: GRNItem) => {
+    const wpu = weightPerUnitForItem(item);
+    if (wpu > 0) return wpu;
+    return 1;
   };
 
   const incrementWeight = (index: number) => {
     const item = formData.items[index];
     const maxWeight = item.orderedWeight - (item.previousWeight || 0);
-    const newWeight = Math.min(maxWeight, Number(item.receivedWeight || 0) + 1);
-    handleItemChange(index, "receivedWeight", String(newWeight));
+    const step = weightStepForItem(item);
+    const current = Number(item.receivedWeight || 0);
+    const newWeight = maxWeight > 0
+      ? Math.min(maxWeight, parseFloat((current + step).toFixed(3)))
+      : parseFloat((current + step).toFixed(3));
+    handleItemChange(index, "receivedWeight", newWeight);
   };
 
   const decrementWeight = (index: number) => {
     const item = formData.items[index];
-    const newWeight = Math.max(0, Number(item.receivedWeight || 0) - 1);
-    handleItemChange(index, "receivedWeight", String(newWeight));
+    const step = weightStepForItem(item);
+    const current = Number(item.receivedWeight || 0);
+    const newWeight = Math.max(0, parseFloat((current - step).toFixed(3)));
+    handleItemChange(index, "receivedWeight", newWeight);
+  };
+
+  const handlePerUnitWeightsChange = (index: number, weights: number[]) => {
+    const item = formData.items[index];
+    const total = weights.reduce((s, w) => s + (Number(w) || 0), 0);
+    const updatedItems = [...formData.items];
+    updatedItems[index] = {
+      ...item,
+      perUnitWeights: weights,
+      receivedWeight: total,
+      pendingWeight: item.orderedWeight - item.previousWeight - total,
+    };
+    setFormData((prev) => ({ ...prev, items: updatedItems }));
   };
 
   const validateForm = () => {
@@ -341,12 +491,19 @@ export default function GRNFormScreen() {
       if (item.receivedQuantity > 0) {
         hasAtLeastOneItem = true;
 
-        // Check if receiving more than pending
+        // Check if receiving more than pending quantity
         const maxAllowed =
           item.orderedQuantity - (item.previouslyReceived || 0);
         if (item.receivedQuantity > maxAllowed) {
           newErrors[`items.${index}.receivedQuantity`] =
             `Cannot receive more than pending (${maxAllowed} ${item.unit})`;
+        }
+
+        // Check if receiving more than pending weight
+        const maxWeight = item.orderedWeight - (item.previousWeight || 0);
+        if (maxWeight > 0 && item.receivedWeight > maxWeight) {
+          newErrors[`items.${index}.receivedWeight`] =
+            `Cannot receive more than pending weight (${maxWeight.toFixed(2)} kg)`;
         }
       }
     });
@@ -361,10 +518,7 @@ export default function GRNFormScreen() {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      Alert.alert(
-        "Validation Error",
-        "Please fill all required fields correctly",
-      );
+      toast.showToast('warning', 'Validation Error', 'Please fill all required fields correctly');
       return;
     }
 
@@ -380,6 +534,7 @@ export default function GRNFormScreen() {
             purchaseOrderItem: item.purchaseOrderItem,
             receivedQuantity: Number(item.receivedQuantity),
             receivedWeight: Number(item.receivedWeight || 0),
+            receivedSubProductWeights: (item.perUnitWeights || []).filter((w) => w > 0),
             warehouseLocation:
               item.warehouseLocation || formData.warehouseLocation,
             notes: item.notes || "",
@@ -397,16 +552,8 @@ export default function GRNFormScreen() {
       console.log("✅ GRN response:", response);
 
       if (response?.success) {
-        Alert.alert(
-          "Success",
-          `GRN ${isEditMode ? "updated" : "created"} successfully!`,
-          [
-            {
-              text: "OK",
-              onPress: () => router.back(),
-            },
-          ],
-        );
+        toast.showToast('success', isEditMode ? 'GRN Updated' : 'GRN Created', `GRN ${isEditMode ? 'updated' : 'created'} successfully!`);
+        setTimeout(() => router.back(), 800);
       } else {
         throw new Error(response?.message || "Failed to save GRN");
       }
@@ -549,8 +696,8 @@ export default function GRNFormScreen() {
                 ]}
               >
                 {formData.warehouseLocation
-                  ? WAREHOUSE_LOCATIONS.find(
-                      (w) => w.id === formData.warehouseLocation,
+                  ? warehouseLocations.find(
+                      (w) => w._id === formData.warehouseLocation,
                     )?.name || "Select Warehouse"
                   : "Select Warehouse Location"}
               </Text>
@@ -611,7 +758,9 @@ export default function GRNFormScreen() {
                   {/* Product Info */}
                   <View style={styles.itemHeader}>
                     <Text style={styles.itemProductName}>
-                      {item.productName}
+                      {item.subProductName
+                        ? `${item.productName} X ${item.subProductName}`
+                        : item.productName}
                     </Text>
                     <Text style={styles.itemProductCode}>
                       {item.productCode}
@@ -753,72 +902,75 @@ export default function GRNFormScreen() {
                   </View>
 
                   {/* Receiving Now - Weight */}
-                  {item.orderedWeight > 0 && (
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Receiving Now (Weight)</Text>
-                      <View style={styles.inputWithControls}>
-                        <TouchableOpacity
-                          style={[
-                            styles.controlButton,
-                            (item.receivedWeight || 0) <= 0 &&
-                              styles.controlButtonDisabled,
-                          ]}
-                          onPress={() => decrementWeight(index)}
-                          disabled={(item.receivedWeight || 0) <= 0}
-                        >
-                          <Ionicons
-                            name="remove"
-                            size={20}
-                            color={
-                              (item.receivedWeight || 0) <= 0
-                                ? "#D1D5DB"
-                                : "#374151"
-                            }
-                          />
-                        </TouchableOpacity>
-
-                        <TextInput
-                          style={[styles.input, styles.inputCenter]}
-                          value={
-                            typeof item.receivedWeight === "number"
-                              ? item.receivedWeight.toFixed(2)
-                              : "0.00"
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Receiving Now (Weight)</Text>
+                    <View style={styles.inputWithControls}>
+                      <TouchableOpacity
+                        style={[
+                          styles.controlButton,
+                          (item.receivedWeight || 0) <= 0 &&
+                            styles.controlButtonDisabled,
+                        ]}
+                        onPress={() => decrementWeight(index)}
+                        disabled={(item.receivedWeight || 0) <= 0}
+                      >
+                        <Ionicons
+                          name="remove"
+                          size={20}
+                          color={
+                            (item.receivedWeight || 0) <= 0
+                              ? "#D1D5DB"
+                              : "#374151"
                           }
-                          onChangeText={(value) =>
-                            handleItemChange(index, "receivedWeight", value)
-                          }
-                          keyboardType="decimal-pad"
-                          placeholder="0.00"
-                          placeholderTextColor="#9CA3AF"
                         />
+                      </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={[
-                            styles.controlButton,
+                      <TextInput
+                        style={[styles.input, styles.inputCenter]}
+                        value={
+                          typeof item.receivedWeight === "number"
+                            ? item.receivedWeight.toFixed(2)
+                            : "0.00"
+                        }
+                        onChangeText={(value) =>
+                          handleItemChange(index, "receivedWeight", value)
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="0.00"
+                        placeholderTextColor="#9CA3AF"
+                      />
+
+                      <TouchableOpacity
+                        style={[
+                          styles.controlButton,
+                          item.orderedWeight > 0 &&
                             (item.receivedWeight || 0) >=
                               item.orderedWeight - (item.previousWeight || 0) &&
-                              styles.controlButtonDisabled,
-                          ]}
-                          onPress={() => incrementWeight(index)}
-                          disabled={
-                            (item.receivedWeight || 0) >=
+                            styles.controlButtonDisabled,
+                        ]}
+                        onPress={() => incrementWeight(index)}
+                        disabled={
+                          item.orderedWeight > 0 &&
+                          (item.receivedWeight || 0) >=
                             item.orderedWeight - (item.previousWeight || 0)
-                          }
-                        >
-                          <Ionicons
-                            name="add"
-                            size={20}
-                            color={
-                              (item.receivedWeight || 0) >=
+                        }
+                      >
+                        <Ionicons
+                          name="add"
+                          size={20}
+                          color={
+                            item.orderedWeight > 0 &&
+                            (item.receivedWeight || 0) >=
                               item.orderedWeight - (item.previousWeight || 0)
-                                ? "#D1D5DB"
-                                : "#374151"
-                            }
-                          />
-                        </TouchableOpacity>
+                              ? "#D1D5DB"
+                              : "#374151"
+                          }
+                        />
+                      </TouchableOpacity>
 
-                        <Text style={styles.unitText}>kg</Text>
-                      </View>
+                      <Text style={styles.unitText}>kg</Text>
+                    </View>
+                    {item.orderedWeight > 0 && (
                       <Text style={styles.helperText}>
                         Max:{" "}
                         {(
@@ -826,8 +978,8 @@ export default function GRNFormScreen() {
                         ).toFixed(2)}{" "}
                         kg
                       </Text>
-                    </View>
-                  )}
+                    )}
+                  </View>
 
                   {/* Progress Bar */}
                   <View style={styles.progressContainer}>
@@ -881,6 +1033,38 @@ export default function GRNFormScreen() {
                       )}
                     </View>
                   </TouchableOpacity>
+
+                  {/* Per-Unit Weights — only for items with sub-products */}
+                  {item.subProductName && Number(item.receivedQuantity) > 0 && (
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>
+                        Per-Unit Weights (optional) — {Number(item.receivedQuantity)} units
+                      </Text>
+                      {Array.from({ length: Number(item.receivedQuantity) }).map((_, wi) => (
+                        <View key={wi} style={styles.perUnitWeightRow}>
+                          <Text style={styles.perUnitWeightLabel}>#{wi + 1}</Text>
+                          <TextInput
+                            style={[styles.input, { flex: 1 }]}
+                            keyboardType="decimal-pad"
+                            placeholder="0.00"
+                            placeholderTextColor="#9CA3AF"
+                            value={String((item.perUnitWeights || [])[wi] || "")}
+                            onChangeText={(val) => {
+                              const weights = [...(item.perUnitWeights || [])];
+                              weights[wi] = parseFloat(val) || 0;
+                              handlePerUnitWeightsChange(index, weights);
+                            }}
+                          />
+                          <Text style={styles.perUnitWeightUnit}>kg</Text>
+                        </View>
+                      ))}
+                      {(item.perUnitWeights || []).some((w) => w > 0) && (
+                        <Text style={styles.perUnitWeightSum}>
+                          Total: {(item.perUnitWeights || []).reduce((s, w) => s + (w || 0), 0).toFixed(2)} kg
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   {/* Item Notes */}
                   <View style={styles.formGroup}>
@@ -968,6 +1152,10 @@ export default function GRNFormScreen() {
         searchPlaceholder="Search by PO number or supplier..."
         emptyMessage="No purchase orders available"
         loading={loadingPOs}
+        onSearch={handlePOSearch}
+        onLoadMore={handlePOLoadMore}
+        loadingMore={poLoadingMore}
+        hasMore={poHasMore}
       />
 
       {/* Searchable Warehouse Modal */}
@@ -975,11 +1163,11 @@ export default function GRNFormScreen() {
         visible={showWarehouseModal}
         onClose={() => setShowWarehouseModal(false)}
         title="Select Warehouse Location"
-        options={WAREHOUSE_LOCATIONS}
+        options={warehouseLocations}
         selectedValue={formData.warehouseLocation}
         onSelect={(value: string) => handleChange("warehouseLocation", value)}
         getLabel={(w) => w.name}
-        getValue={(w) => w.id}
+        getValue={(w) => w._id}
         searchPlaceholder="Search warehouses..."
         emptyMessage="No warehouses found"
       />
@@ -1340,5 +1528,33 @@ const styles = StyleSheet.create({
   },
   searchPickerPlaceholder: {
     color: "#9CA3AF",
+  },
+  perUnitWeightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  perUnitWeightLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    width: 28,
+  },
+  perUnitWeightUnit: {
+    fontSize: 13,
+    color: "#6B7280",
+    width: 24,
+  },
+  perUnitWeightSum: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#065F46",
+    marginTop: 4,
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: "flex-start",
   },
 });
