@@ -13,68 +13,9 @@ export const inventoryAPI = {
     return apiRequest(endpoint);
   },
 
-  // Get inventory lot by ID
-  getById: async (id) => {
-    return apiRequest(`/${id}`);
-  },
-
-  // Create new inventory lot
-  create: async (lotData) => {
-    return apiRequest('', {
-      method: 'POST',
-      body: JSON.stringify(lotData),
-    });
-  },
-
-  // Update inventory lot
-  update: async (id, lotData) => {
-    return apiRequest(`/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(lotData),
-    });
-  },
-
-  // Delete inventory lot
-  delete: async (id) => {
-    return apiRequest(`/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Get inventory by product
+  // Get inventory by product (filter via getAll)
   getByProduct: async (productId, params = {}) => {
     return inventoryAPI.getAll({ product: productId, ...params });
-  },
-
-  // Get inventory by location
-  getByLocation: async (location, params = {}) => {
-    return inventoryAPI.getAll({ location, ...params });
-  },
-
-  // Get low stock items
-  getLowStock: async () => {
-    return apiRequest('/low-stock');
-  },
-
-  // Get available stock for sales
-  getAvailableStock: async (productId) => {
-    return apiRequest(`/available/${productId}`);
-  },
-
-  // Reserve stock for sales order
-  reserveStock: async (lotId, quantity) => {
-    return apiRequest(`/${lotId}/reserve`, {
-      method: 'PATCH',
-      body: JSON.stringify({ quantity }),
-    });
-  },
-
-  // Release reserved stock
-  releaseStock: async (lotId, quantity) => {
-    return apiRequest(`/${lotId}/release`, {
-      method: 'PATCH',
-      body: JSON.stringify({ quantity }),
-    });
   },
 
   // Get inventory statistics
@@ -119,14 +60,12 @@ export const inventoryFormatters = {
     return number || 'N/A';
   },
 
-  // Format lot status
+  // Format lot status — matches server enum: Active | Reserved | Consumed
   status: (status) => {
     const statusMap = {
-      available: { label: 'Available', color: '#10B981' },
-      reserved: { label: 'Reserved', color: '#F59E0B' },
-      sold: { label: 'Sold', color: '#3B82F6' },
-      damaged: { label: 'Damaged', color: '#EF4444' },
-      expired: { label: 'Expired', color: '#6B7280' },
+      Active:   { label: 'Active',   color: '#10B981' },
+      Reserved: { label: 'Reserved', color: '#F59E0B' },
+      Consumed: { label: 'Consumed', color: '#6B7280' },
     };
     return statusMap[status] || { label: status, color: '#6B7280' };
   },

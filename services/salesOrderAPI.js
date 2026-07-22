@@ -54,10 +54,11 @@ export const salesOrderAPI = {
     return salesOrderAPI.getAll({ status, ...params });
   },
 
-  // Approve sales order
-  approve: async (id) => {
-    return apiRequest(`/${id}/approve`, {
+  // Update sales order status — valid values: Draft | Pending | Processing | Delivered | Cancelled
+  updateStatus: async (id, status) => {
+    return apiRequest(`/${id}/status`, {
       method: 'PATCH',
+      body: JSON.stringify({ status }),
     });
   },
 
@@ -69,11 +70,10 @@ export const salesOrderAPI = {
     });
   },
 
-  // Mark as dispatched
-  dispatch: async (id, challanId) => {
-    return apiRequest(`/${id}/dispatch`, {
-      method: 'PATCH',
-      body: JSON.stringify({ challanId }),
+  // Recalculate all SO statuses (admin utility)
+  recalculateStatuses: async () => {
+    return apiRequest('/recalculate-statuses', {
+      method: 'POST',
     });
   },
 
@@ -90,16 +90,14 @@ export const soFormatters = {
     return number || 'N/A';
   },
 
-  // Format SO status
+  // Format SO status — matches server enum: Draft | Pending | Processing | Delivered | Cancelled
   status: (status) => {
     const statusMap = {
-      draft: { label: 'Draft', color: '#6B7280' },
-      pending: { label: 'Pending', color: '#F59E0B' },
-      approved: { label: 'Approved', color: '#10B981' },
-      partially_dispatched: { label: 'Partially Dispatched', color: '#3B82F6' },
-      dispatched: { label: 'Dispatched', color: '#8B5CF6' },
-      delivered: { label: 'Delivered', color: '#059669' },
-      cancelled: { label: 'Cancelled', color: '#EF4444' },
+      Draft:      { label: 'Draft',      color: '#6B7280' },
+      Pending:    { label: 'Pending',    color: '#F59E0B' },
+      Processing: { label: 'Processing', color: '#3B82F6' },
+      Delivered:  { label: 'Delivered',  color: '#059669' },
+      Cancelled:  { label: 'Cancelled',  color: '#EF4444' },
     };
     return statusMap[status] || { label: status, color: '#6B7280' };
   },
@@ -150,16 +148,14 @@ export const soFormatters = {
     return totalQuantity > 0 ? Math.round((dispatchedQuantity / totalQuantity) * 100) : 0;
   },
 
-  // Get next possible statuses
+  // Get next possible statuses — matches server enum flow
   getNextStatuses: (currentStatus) => {
     const statusFlow = {
-      'draft': ['pending', 'cancelled'],
-      'pending': ['approved', 'cancelled'],
-      'approved': ['partially_dispatched', 'dispatched', 'cancelled'],
-      'partially_dispatched': ['dispatched', 'cancelled'],
-      'dispatched': ['delivered'],
-      'delivered': [],
-      'cancelled': []
+      'Draft':      ['Pending', 'Cancelled'],
+      'Pending':    ['Processing', 'Cancelled'],
+      'Processing': ['Delivered', 'Cancelled'],
+      'Delivered':  [],
+      'Cancelled':  []
     };
     return statusFlow[currentStatus] || [];
   },

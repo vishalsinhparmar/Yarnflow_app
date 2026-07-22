@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useToast } from "@/components/ui/Toast";
 import { useWarehouseLocations } from "../../hooks/useWarehouseLocations";
+import { inventoryAPI } from "../../services/inventoryAPI";
 import { salesChallanAPI } from "../../services/salesChallanAPI";
 import { salesOrderAPI } from "../../services/salesOrderAPI";
 
@@ -32,8 +33,9 @@ interface ChallanItem {
   pendingQuantity: number;
   unit: string;
   weight: number;
-  weightPerUnit?: number;
   subProductWeights?: number[];
+  orderedSubProductWeights?: number[];
+  totalSOWeight?: number;
   markAsComplete?: boolean;
   notes?: string;
 }
@@ -213,6 +215,7 @@ export default function SalesChallanFormScreen() {
       setFormData((prev) => ({
         ...prev,
         salesOrder: "",
+        warehouseLocation: "",
         items: [],
       }));
       return;
@@ -221,10 +224,10 @@ export default function SalesChallanFormScreen() {
     try {
       console.log("🔗 Loading SO details:", soId);
 
-      // Load SO and dispatched quantities in parallel
+      // Use getDispatchedQuantities for accurate per-item dispatched counts (matching web)
       const [soResponse, dispatchedResponse] = await Promise.all([
         salesOrderAPI.getById(soId),
-        salesChallanAPI.getAll({ salesOrder: soId }),
+        salesChallanAPI.getDispatchedQuantities(soId).catch(() => null),
       ]);
 
       if (soResponse?.success && soResponse?.data) {
@@ -232,35 +235,34 @@ export default function SalesChallanFormScreen() {
         setSelectedSO(so);
         console.log("📦 SO loaded:", so.soNumber);
 
-        // Build dispatched map
+        // Build dispatched map from dedicated endpoint
         const dispatchedMap: { [key: string]: number } = {};
         if (dispatchedResponse?.success && dispatchedResponse?.data) {
-          dispatchedResponse.data.forEach((challan: any) => {
-            if (challan.items) {
-              challan.items.forEach((item: any) => {
-                const itemId =
-                  item.salesOrderItem?.toString() || item._id?.toString();
-                if (itemId) {
-                  dispatchedMap[itemId] =
-                    (dispatchedMap[itemId] || 0) + (item.dispatchQuantity || 0);
-                }
-              });
-            }
+          dispatchedResponse.data.forEach((entry: any) => {
+            dispatchedMap[entry.salesOrderItem] = entry.totalDispatched;
           });
         }
         setDispatchedQuantities(dispatchedMap);
 
-        // Populate items
+        // Populate items — use actual FIFO subProductWeights from SO (not averaged)
         const items = so.items
           .map((item: any) => {
             const dispatched = dispatchedMap[item._id] || 0;
             const remaining = Math.max(0, item.quantity - dispatched);
-            const weightPerUnit = item.weight / item.quantity;
-            const remainingWeight = remaining * weightPerUnit;
+            const orderedWeights: number[] = Array.isArray(item.subProductWeights) ? item.subProductWeights : [];
+            const totalWeight = orderedWeights.length > 0
+              ? orderedWeights.reduce((s: number, w: number) => s + (Number(w) || 0), 0)
+              : (item.weight || 0);
+            const remainingWeights = orderedWeights.slice(dispatched, dispatched + remaining);
+            const remainingWeight = orderedWeights.length > 0
+              ? parseFloat(remainingWeights.reduce((sum: number, weight: number) => sum + (Number(weight) || 0), 0).toFixed(2))
+              : dispatched === 0
+                ? totalWeight
+                : 0;
 
             return {
               salesOrderItem: item._id,
-              product: item.product?._id,
+              product: item.product?._id || item.product,
               productName: item.product?.productName || item.productName,
               subProduct: item.subProduct?._id || item.subProduct || '',
               subProductName: item.subProductName || item.subProduct?.name || '',
@@ -271,8 +273,9 @@ export default function SalesChallanFormScreen() {
               pendingQuantity: 0,
               unit: item.unit,
               weight: remainingWeight,
-              weightPerUnit: weightPerUnit,
-              subProductWeights: Array.from({ length: remaining }, () => parseFloat((weightPerUnit).toFixed(3))),
+              subProductWeights: remainingWeights,
+              orderedSubProductWeights: orderedWeights,
+              totalSOWeight: totalWeight,
               markAsComplete: false,
               notes: item.notes || "",
             };
@@ -281,13 +284,49 @@ export default function SalesChallanFormScreen() {
             (item: any) => item.orderedQuantity - item.previouslyDispatched > 0,
           );
 
+        // Auto-detect warehouse from inventory lots (matching web CreateChallanModal)
+        const itemsWithProducts = items.filter((item: any) => item.product);
+        let detectedWh = '';
+        if (itemsWithProducts.length > 0) {
+          try {
+            const lotsResponses = await Promise.all(
+              itemsWithProducts.map((item: any) =>
+                inventoryAPI.getAllLots({
+                  product: item.product,
+                  ...(item.subProduct ? { subProduct: item.subProduct } : {}),
+                  status: 'Active',
+                  limit: 100,
+                }).catch(() => null)
+              )
+            );
+            const allWarehouses: string[] = [];
+            lotsResponses.forEach((res: any) => {
+              if (res?.success && Array.isArray(res.data)) {
+                res.data.forEach((lot: any) => {
+                  if (lot.warehouse && lot.currentQuantity > 0) {
+                    allWarehouses.push(lot.warehouse);
+                  }
+                });
+              }
+            });
+            const unique = [...new Set(allWarehouses)].filter(Boolean);
+            detectedWh = unique.join(', ');
+          } catch (e) {
+            console.warn('Warehouse auto-detect failed:', e);
+          }
+        }
+
         setFormData((prev) => ({
           ...prev,
           salesOrder: soId,
+          expectedDeliveryDate: so.expectedDeliveryDate
+            ? new Date(so.expectedDeliveryDate).toISOString().split('T')[0]
+            : prev.expectedDeliveryDate,
+          warehouseLocation: detectedWh || prev.warehouseLocation,
           items,
         }));
 
-        console.log(`✅ Loaded ${items.length} pending items`);
+        console.log(`✅ Loaded ${items.length} pending items | warehouse: ${detectedWh || '(manual)'}`);
       }
     } catch (error) {
       console.error("❌ Error loading SO:", error);
@@ -323,16 +362,14 @@ export default function SalesChallanFormScreen() {
       updatedItems[index].pendingQuantity =
         item.orderedQuantity - item.previouslyDispatched - quantity;
       if (item.subProduct) {
-        // Resize per-unit weights array and recalculate total
-        const current = Array.isArray(item.subProductWeights) ? item.subProductWeights : [];
-        const wpu = item.weightPerUnit || 0;
-        const next = Array.from({ length: quantity }, (_, i) =>
-          i < current.length ? current[i] : parseFloat(wpu.toFixed(3))
+        // Use FIFO exact bag weights (slice from orderedSubProductWeights) — matching web
+        const orderedWeights: number[] = item.orderedSubProductWeights || [];
+        const sliced = orderedWeights.slice(
+          item.previouslyDispatched || 0,
+          (item.previouslyDispatched || 0) + quantity,
         );
-        updatedItems[index].subProductWeights = next;
-        updatedItems[index].weight = next.reduce((s, w) => s + (Number(w) || 0), 0);
-      } else {
-        updatedItems[index].weight = quantity * (item.weightPerUnit || 0);
+        updatedItems[index].subProductWeights = sliced;
+        updatedItems[index].weight = parseFloat(sliced.reduce((s: number, w: number) => s + (Number(w) || 0), 0).toFixed(2));
       }
     }
 
@@ -385,7 +422,15 @@ export default function SalesChallanFormScreen() {
         }
 
         // Check if total weight exceeds the remaining weight for the SO item
-        const maxWeight = maxAllowed * (item.weightPerUnit || 0);
+        const exactRemainingWeights = item.subProduct
+          ? (item.orderedSubProductWeights || []).slice(
+              item.previouslyDispatched || 0,
+              (item.previouslyDispatched || 0) + maxAllowed,
+            )
+          : [];
+        const maxWeight = exactRemainingWeights.length > 0
+          ? exactRemainingWeights.reduce((sum: number, weight: number) => sum + (Number(weight) || 0), 0)
+          : item.totalSOWeight || 0;
         if (maxWeight > 0 && item.weight > maxWeight) {
           newErrors[`items.${index}.weight`] =
             `Weight exceeds pending ${maxWeight.toFixed(2)} kg`;
@@ -552,27 +597,36 @@ export default function SalesChallanFormScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Dispatch Information</Text>
 
-          {/* Warehouse Location */}
+          {/* Warehouse Location — auto-detected from inventory lots, or manual picker */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Warehouse Location *</Text>
-            <TouchableOpacity
-              style={styles.pickerButton}
-              onPress={() => setShowWarehouseModal(true)}
-            >
-              <Text
-                style={[
-                  styles.pickerButtonText,
-                  !formData.warehouseLocation && styles.placeholderText,
-                ]}
+            {formData.warehouseLocation &&
+             !warehouseLocations.some((w: any) => w._id === formData.warehouseLocation) ? (
+              <View style={styles.detectedWarehouseBox}>
+                <Ionicons name="location" size={16} color="#16A34A" />
+                <Text style={styles.detectedWarehouseText} numberOfLines={1}>{formData.warehouseLocation}</Text>
+                <TouchableOpacity onPress={() => handleChange('warehouseLocation', '')}>
+                  <Ionicons name="close-circle" size={18} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.pickerButton}
+                onPress={() => setShowWarehouseModal(true)}
               >
-                {formData.warehouseLocation
-                  ? warehouseLocations.find(
-                      (w: any) => w._id === formData.warehouseLocation,
-                    )?.name || "Select Warehouse"
-                  : "Select Warehouse Location"}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.pickerButtonText,
+                    !formData.warehouseLocation && styles.placeholderText,
+                  ]}
+                >
+                  {formData.warehouseLocation
+                    ? warehouseLocations.find((w: any) => w._id === formData.warehouseLocation)?.name || formData.warehouseLocation
+                    : "Select Warehouse Location"}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={COLORS.gray500} />
+              </TouchableOpacity>
+            )}
             {errors.warehouseLocation && (
               <Text style={styles.errorText}>{errors.warehouseLocation}</Text>
             )}
@@ -893,6 +947,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#111827",
     backgroundColor: "#fff",
+  },
+  detectedWarehouseBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  detectedWarehouseText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#15803D',
   },
   pickerContainer: {
     borderWidth: 1,

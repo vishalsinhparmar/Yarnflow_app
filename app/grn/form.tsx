@@ -33,6 +33,7 @@ interface GRNItem {
   receivedQuantity: number;
   receivedWeight: number;
   perUnitWeights?: number[];
+  orderedSubProductWeights?: number[];
   pendingQuantity: number;
   pendingWeight: number;
   unit: string;
@@ -188,9 +189,6 @@ export default function GRNFormScreen() {
                   : [];
               const receivedWeight = Number(item.receivedWeight) || 0;
               const receivedQuantity = Number(item.receivedQuantity) || 0;
-              const weightPerUnit = receivedQuantity > 0
-                ? parseFloat((receivedWeight / receivedQuantity).toFixed(2))
-                : 0;
               return {
                 purchaseOrderItem: item.purchaseOrderItem || item._id,
                 productName: item.productName,
@@ -202,11 +200,10 @@ export default function GRNFormScreen() {
                 previousWeight: item.previousWeight || 0,
                 receivedQuantity: receivedQuantity,
                 receivedWeight: receivedWeight,
-                perUnitWeights: perUnitWeights.length > 0
-                  ? perUnitWeights.map((w: number) => parseFloat(w.toFixed(2)))
-                  : receivedQuantity > 0
-                    ? Array.from({ length: receivedQuantity }, () => weightPerUnit)
-                    : [],
+                orderedSubProductWeights: Array.isArray(item.orderedSubProductWeights)
+                  ? item.orderedSubProductWeights.map((weight: number) => Number(weight) || 0)
+                  : [],
+                perUnitWeights: perUnitWeights.map((weight: number) => Number(weight) || 0),
                 pendingQuantity: item.pendingQuantity || 0,
                 pendingWeight: item.pendingWeight || 0,
                 unit: item.unit || "Bags",
@@ -258,27 +255,22 @@ export default function GRNFormScreen() {
             const orderedWeight =
               item.weight || item.specifications?.weight || 0;
             const receivedQty = item.receivedQuantity || 0;
-
-            // Calculate received weight
-            let receivedWt = item.receivedWeight || 0;
-            if (
-              receivedWt === 0 &&
-              receivedQty > 0 &&
-              orderedQty > 0 &&
-              orderedWeight > 0
-            ) {
-              const weightPerUnit = orderedWeight / orderedQty;
-              receivedWt = receivedQty * weightPerUnit;
-            }
-
+            const orderedSubProductWeights: number[] = Array.isArray(item.subProductWeights)
+              ? item.subProductWeights.map((weight: unknown) => Number(weight) || 0)
+              : [];
+            const hasSubProduct = Boolean(item.subProductName || item.subProduct?.name);
+            const previouslyReceivedWeights = orderedSubProductWeights.slice(0, receivedQty);
+            const receivedWt = hasSubProduct
+              ? previouslyReceivedWeights.reduce((sum: number, weight: number) => sum + weight, 0)
+              : Number(item.receivedWeight) || 0;
             const pendingQty = orderedQty - receivedQty;
             const pendingWt = orderedWeight - receivedWt;
-
             const initialQty = pendingQty > 0 ? pendingQty : 0;
             const initialWeight = pendingWt > 0 ? pendingWt : 0;
-            const perUnitWeight = initialQty > 0
-              ? parseFloat((initialWeight / initialQty).toFixed(2))
-              : 0;
+            const pendingSubProductWeights = orderedSubProductWeights.slice(
+              receivedQty,
+              receivedQty + initialQty,
+            );
             return {
               purchaseOrderItem: item._id,
               productName: item.productName,
@@ -289,10 +281,11 @@ export default function GRNFormScreen() {
               previouslyReceived: receivedQty,
               previousWeight: receivedWt,
               receivedQuantity: initialQty,
-              receivedWeight: initialWeight,
-              perUnitWeights: (item.subProductName || item.subProduct?.name) && initialQty > 0
-                ? Array.from({ length: initialQty }, () => perUnitWeight)
-                : [],
+              receivedWeight: hasSubProduct
+                ? pendingSubProductWeights.reduce((sum: number, weight: number) => sum + weight, 0)
+                : initialWeight,
+              orderedSubProductWeights,
+              perUnitWeights: hasSubProduct ? pendingSubProductWeights : [],
               pendingQuantity: pendingQty,
               pendingWeight: pendingWt,
               unit: item.unit,
@@ -334,34 +327,6 @@ export default function GRNFormScreen() {
     }
   };
 
-  const weightPerUnitForItem = (item: GRNItem) => {
-    const receivedQty = Number(item.receivedQuantity) || 0;
-    const receivedWt = Number(item.receivedWeight) || 0;
-    if (receivedQty > 0 && receivedWt > 0) return receivedWt / receivedQty;
-    if (item.orderedQuantity > 0 && item.orderedWeight > 0) {
-      return item.orderedWeight / item.orderedQuantity;
-    }
-    return 0;
-  };
-
-  const distributeWeights = (item: GRNItem, totalWeight: number, quantity: number): number[] => {
-    const qty = Math.floor(quantity || 0);
-    if (qty <= 0) return [];
-    const perUnit = qty > 0 ? totalWeight / qty : 0;
-    // Preserve existing per-unit weights when possible, only pad/truncate
-    const current = Array.isArray(item.perUnitWeights) ? item.perUnitWeights : [];
-    const next = Array.from({ length: qty }, (_, i) => {
-      if (i < current.length) return current[i];
-      return perUnit;
-    });
-    // Rebalance to match total if current sum differs significantly from total
-    const sum = next.reduce((s, w) => s + (Number(w) || 0), 0);
-    if (Math.abs(sum - totalWeight) > 0.001 && totalWeight > 0) {
-      return next.map(() => perUnit);
-    }
-    return next;
-  };
-
   const handleItemChange = (index: number, field: string, value: any) => {
     const updatedItems = [...formData.items];
     const item = updatedItems[index];
@@ -372,21 +337,16 @@ export default function GRNFormScreen() {
     if (field === "receivedQuantity") {
       const maxAllowed = item.orderedQuantity - (item.previouslyReceived || 0);
       const qty = Math.floor(Math.max(0, Math.min(maxAllowed, numValue)));
-      const wpu = weightPerUnitForItem(item);
       const currentWeight = Number(item.receivedWeight) || 0;
-      // If no weight was set yet (and ordered weight exists), default to qty * ordered ratio
-      const defaultWeight = (item.orderedQuantity > 0 && item.orderedWeight > 0 && currentWeight === 0)
-        ? qty * (item.orderedWeight / item.orderedQuantity)
-        : currentWeight;
-      // Only track per-unit weights for sub-product items
-      const perUnit = currentWeight > 0 && qty > 0 ? currentWeight / qty : wpu;
-      const currentWeights = hasSubProduct && Array.isArray(item.perUnitWeights) ? item.perUnitWeights : [];
       const nextWeights = hasSubProduct
-        ? Array.from({ length: qty }, (_, i) => i < currentWeights.length ? currentWeights[i] : perUnit)
+        ? (item.orderedSubProductWeights || []).slice(
+            item.previouslyReceived || 0,
+            (item.previouslyReceived || 0) + qty,
+          )
         : [];
-      const finalWeight = hasSubProduct && nextWeights.length > 0
-        ? nextWeights.reduce((s, w) => s + (Number(w) || 0), 0) || defaultWeight
-        : defaultWeight;
+      const finalWeight = hasSubProduct
+        ? nextWeights.reduce((sum, weight) => sum + (Number(weight) || 0), 0)
+        : currentWeight;
 
       updatedItems[index] = {
         ...item,
@@ -401,12 +361,14 @@ export default function GRNFormScreen() {
       const weight = maxWeight > 0
         ? Math.max(0, Math.min(maxWeight, numValue))
         : Math.max(0, numValue);
-      const qty = Number(item.receivedQuantity) || 0;
-      const nextWeights = hasSubProduct ? distributeWeights(item, weight, qty) : [];
+      const nextWeights = hasSubProduct ? item.perUnitWeights || [] : [];
+      const finalWeight = hasSubProduct
+        ? nextWeights.reduce((sum, itemWeight) => sum + (Number(itemWeight) || 0), 0)
+        : weight;
       updatedItems[index] = {
         ...item,
-        receivedWeight: weight,
-        pendingWeight: item.orderedWeight - item.previousWeight - weight,
+        receivedWeight: finalWeight,
+        pendingWeight: item.orderedWeight - item.previousWeight - finalWeight,
         perUnitWeights: nextWeights,
       };
     } else {
@@ -432,11 +394,7 @@ export default function GRNFormScreen() {
     handleItemChange(index, "receivedQuantity", newQty);
   };
 
-  const weightStepForItem = (item: GRNItem) => {
-    const wpu = weightPerUnitForItem(item);
-    if (wpu > 0) return wpu;
-    return 1;
-  };
+  const weightStepForItem = () => 1;
 
   const incrementWeight = (index: number) => {
     const item = formData.items[index];
@@ -912,7 +870,7 @@ export default function GRNFormScreen() {
                             styles.controlButtonDisabled,
                         ]}
                         onPress={() => decrementWeight(index)}
-                        disabled={(item.receivedWeight || 0) <= 0}
+                        disabled={Boolean(item.subProductName) || (item.receivedWeight || 0) <= 0}
                       >
                         <Ionicons
                           name="remove"
@@ -935,6 +893,7 @@ export default function GRNFormScreen() {
                         onChangeText={(value) =>
                           handleItemChange(index, "receivedWeight", value)
                         }
+                        editable={!item.subProductName}
                         keyboardType="decimal-pad"
                         placeholder="0.00"
                         placeholderTextColor="#9CA3AF"
@@ -950,9 +909,10 @@ export default function GRNFormScreen() {
                         ]}
                         onPress={() => incrementWeight(index)}
                         disabled={
-                          item.orderedWeight > 0 &&
-                          (item.receivedWeight || 0) >=
-                            item.orderedWeight - (item.previousWeight || 0)
+                          Boolean(item.subProductName) ||
+                          (item.orderedWeight > 0 &&
+                            (item.receivedWeight || 0) >=
+                              item.orderedWeight - (item.previousWeight || 0))
                         }
                       >
                         <Ionicons

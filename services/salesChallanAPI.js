@@ -47,9 +47,14 @@ export const salesChallanAPI = {
     });
   },
 
-  // Get challans by sales order
-  getBySalesOrder: async (soId, params = {}) => {
-    return salesChallanAPI.getAll({ salesOrder: soId, ...params });
+  // Get challans by sales order (uses dedicated route /by-sales-order/:soId)
+  getBySalesOrder: async (soId) => {
+    return apiRequest(`/by-sales-order/${soId}`);
+  },
+
+  // Get dispatched quantities for a sales order
+  getDispatchedQuantities: async (salesOrderId) => {
+    return apiRequest(`/dispatched/${salesOrderId}`);
   },
 
   // Get challans by customer
@@ -62,27 +67,11 @@ export const salesChallanAPI = {
     return salesChallanAPI.getAll({ status, ...params });
   },
 
-  // Update delivery status
+  // Update delivery status — valid values: Prepared | Dispatched | Delivered | Cancelled
   updateStatus: async (id, status, notes) => {
     return apiRequest(`/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status, notes }),
-    });
-  },
-
-  // Mark as in transit
-  markInTransit: async (id, vehicleDetails) => {
-    return apiRequest(`/${id}/in-transit`, {
-      method: "PATCH",
-      body: JSON.stringify(vehicleDetails),
-    });
-  },
-
-  // Mark as delivered
-  markDelivered: async (id, deliveryDetails) => {
-    return apiRequest(`/${id}/delivered`, {
-      method: "PATCH",
-      body: JSON.stringify(deliveryDetails),
     });
   },
 
@@ -96,19 +85,24 @@ export const salesChallanAPI = {
     return apiRequest("/stats");
   },
 
-  // Get active deliveries (in transit)
+  // Get active deliveries (dispatched)
   getActiveDeliveries: async () => {
-    return salesChallanAPI.getByStatus("in_transit");
+    return salesChallanAPI.getByStatus("Dispatched");
   },
 
   // Download PDF for a single challan
-  downloadPDF: async (id, challanNumber = "Challan") => {
+  downloadPDF: async (id, challanNumber = "Challan", customerName = "") => {
     try {
       console.log("📥 Downloading PDF for challan:", id);
 
       const token = await AsyncStorage.getItem("authToken");
       const pdfUrl = `${API_BASE_URL}/sales-challans/${id}/pdf/download`;
-      const filename = `Sales_Challan_${challanNumber}.pdf`;
+      const safeCust = customerName
+        ? customerName.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_+/g, "_").slice(0, 40)
+        : "";
+      const filename = safeCust
+        ? `Sales_Challan_${safeCust}_${challanNumber}.pdf`
+        : `Sales_Challan_${challanNumber}.pdf`;
       const fileUri = FileSystem.documentDirectory + filename;
 
       // Download the PDF file with auth token
@@ -148,13 +142,18 @@ export const salesChallanAPI = {
   },
 
   // Download consolidated PDF for SO (all challans)
-  downloadConsolidatedPDF: async (soId, soNumber = "SO") => {
+  downloadConsolidatedPDF: async (soId, soNumber = "SO", customerName = "") => {
     try {
       console.log("📥 Downloading consolidated PDF for SO:", soId);
 
       const token = await AsyncStorage.getItem("authToken");
       const pdfUrl = `${API_BASE_URL}/sales-challans/so/${soId}/pdf/download`;
-      const filename = `SO_${soNumber}_Consolidated.pdf`;
+      const safeCust = customerName
+        ? customerName.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_+/g, "_").slice(0, 40)
+        : "";
+      const filename = safeCust
+        ? `Consolidated_${safeCust}_${soNumber}.pdf`
+        : `Consolidated_${soNumber}.pdf`;
       const fileUri = FileSystem.documentDirectory + filename;
 
       // Download the PDF file with auth token
@@ -179,7 +178,7 @@ export const salesChallanAPI = {
       // Share/open the PDF
       await Sharing.shareAsync(downloadResult.uri, {
         mimeType: "application/pdf",
-        dialogTitle: `Sales Order ${soNumber} - Consolidated Challans`,
+        dialogTitle: `Consolidated Challan - ${soNumber}`,
       });
 
       return {
@@ -201,15 +200,13 @@ export const challanFormatters = {
     return number || "N/A";
   },
 
-  // Format challan status
+  // Format challan status — matches server enum: Prepared | Dispatched | Delivered | Cancelled
   status: (status) => {
     const statusMap = {
-      draft: { label: "Draft", color: "#6B7280", icon: "📝" },
-      pending: { label: "Pending", color: "#F59E0B", icon: "⏳" },
-      in_transit: { label: "In Transit", color: "#3B82F6", icon: "🚚" },
-      delivered: { label: "Delivered", color: "#10B981", icon: "✅" },
-      cancelled: { label: "Cancelled", color: "#EF4444", icon: "❌" },
-      returned: { label: "Returned", color: "#8B5CF6", icon: "↩️" },
+      Prepared:  { label: "Prepared",  color: "#F59E0B", icon: "📝" },
+      Dispatched:{ label: "Dispatched",color: "#3B82F6", icon: "🚚" },
+      Delivered: { label: "Delivered", color: "#10B981", icon: "✅" },
+      Cancelled: { label: "Cancelled", color: "#EF4444", icon: "❌" },
     };
     return statusMap[status] || { label: status, color: "#6B7280", icon: "📦" };
   },

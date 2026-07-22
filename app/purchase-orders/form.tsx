@@ -1188,14 +1188,30 @@ export default function PurchaseOrderForm() {
         options={subProductsMap[formData.items[selectedItemIndex]?.product] || []}
         selectedValue={formData.items[selectedItemIndex]?.subProduct || ""}
         onSelect={(value: string, sp: any) => {
-          const qty = formData.items[selectedItemIndex]?.quantity || 1;
+          const selectedItem = formData.items[selectedItemIndex];
+          const isDuplicate = formData.items.some((item, index) =>
+            index !== selectedItemIndex &&
+            item.product === selectedItem?.product &&
+            item.subProduct === value,
+          );
+
+          if (isDuplicate) {
+            toast.showToast(
+              'warning',
+              'Duplicate Sub-Product',
+              `"${sp?.name || 'This sub-product'}" is already added for this product.`,
+            );
+            return;
+          }
+
+          const qty = selectedItem?.quantity || 1;
           const weights = Array.from({ length: qty }, () => 0);
           setFormData(prev => ({
             ...prev,
-            items: prev.items.map((it, i) =>
-              i === selectedItemIndex
-                ? { ...it, subProduct: value, subProductName: sp?.name || '', subProductWeights: weights, weight: 0 }
-                : it
+            items: prev.items.map((item, index) =>
+              index === selectedItemIndex
+                ? { ...item, subProduct: value, subProductName: sp?.name || '', subProductWeights: weights, weight: 0 }
+                : item
             ),
           }));
           setShowSubProductModal(false);

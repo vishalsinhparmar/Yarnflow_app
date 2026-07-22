@@ -56,10 +56,7 @@ export default function SalesScreen() {
           .reduce((sum: number, s: any) => sum + s.count, 0);
         
         const pendingCount = statusBreakdown
-          .filter((s: any) => {
-            const id = s._id.toLowerCase();
-            return ['pending', 'approved', 'partially_dispatched', 'dispatched'].includes(id);
-          })
+          .filter((s: any) => ['Pending', 'Processing'].includes(s._id))
           .reduce((sum: number, s: any) => sum + s.count, 0);
 
         setStats({
